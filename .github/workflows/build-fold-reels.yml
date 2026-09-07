@@ -1,0 +1,87 @@
+name: Build experimental Fold Reels
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - piko-fold-reels.patch
+      - .github/workflows/build-fold-reels.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Read this patch kit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Read pinned upstream Piko sources
+        uses: actions/checkout@v4
+        with:
+          repository: crimera/piko
+          ref: 50744aa07bb41c4e1f942a06614ef4e6f2e3610c
+          path: upstream
+          persist-credentials: false
+
+      - name: Apply the reviewed source patch
+        working-directory: upstream
+        run: |
+          git apply --check ../piko-fold-reels.patch
+          git apply ../piko-fold-reels.patch
+          git diff --check
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Check policy and mappings
+        working-directory: upstream
+        run: |
+          mkdir -p tests/fold-reels/build
+          javac -d tests/fold-reels/build \
+            extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPolicy.java \
+            tests/fold-reels/FoldReelsPolicyTest.java
+          java -cp tests/fold-reels/build FoldReelsPolicyTest
+          python3 tests/fold-reels/check_mappings.py
+
+      - name: Compile the Android patch bundle
+        working-directory: upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew buildAndroid --no-daemon --console=plain
+
+      - name: Prepare the experimental bundle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import shutil
+          files = list(Path('upstream/patches/build/libs').glob('*.mpp'))
+          if len(files) != 1:
+              raise SystemExit(f'Expected one .mpp; found {len(files)}')
+          out = Path('output')
+          out.mkdir()
+          dest = out / 'piko-fold-reels-experimental.mpp'
+          shutil.copy2(files[0], dest)
+          digest = hashlib.sha256(dest.read_bytes()).hexdigest()
+          (out / 'SHA256SUMS.txt').write_text(f'{digest}  {dest.name}\n')
+          for name in ('NOTICE', 'LICENSE', 'GUIDE-FR.md'):
+              shutil.copy2(name, out / name)
+          PY
+
+      - name: Downloadable bundle (no release is published)
+        uses: actions/upload-artifact@v4
+        with:
+          name: piko-fold-reels-experimental
+          path: output/
+          if-no-files-found: error
+          retention-days: 14
