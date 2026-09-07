@@ -25,10 +25,10 @@ index 86d6a1c..daf6f4e 100644
              // If a boolean value is found then it will return else it will check for for the usual config ID
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
 new file mode 100644
-index 0000000..09d0963
+index 0000000..0243d83
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,113 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -91,8 +91,20 @@ index 0000000..09d0963
 +            tracker.capture();
 +        }
 +
-+        // Available on Android 10+: provides geometry before Activity.onCreate reads flags.
-+        @Override public void onActivityPreCreated(Activity activity, Bundle state) { activate(activity); }
++        private void capture(Activity activity) {
++            if (activity == null || foreground.get() != activity) return;
++            Configuration configuration = activity.getResources().getConfiguration();
++            // Activity resources reflect this app window, including split-screen and density.
++            // Do not use smallestScreenWidthDp: it cannot distinguish the two Fold windows.
++            kind = FoldReelsPolicy.classify(configuration.screenWidthDp, configuration.screenHeightDp);
++        }
++
++        // Read geometry early, but do NOT create the decor before onCreate: Instagram may
++        // still need to request window features or set its theme. Attach listeners later.
++        @Override public void onActivityPreCreated(Activity activity, Bundle state) {
++            foreground = new WeakReference<>(activity);
++            capture(activity);
++        }
 +        @Override public void onActivityCreated(Activity activity, Bundle state) { activate(activity); }
 +        @Override public void onActivityPreResumed(Activity activity) { activate(activity); }
 +        @Override public void onActivityResumed(Activity activity) { activate(activity); }
@@ -121,12 +133,7 @@ index 0000000..09d0963
 +            private final WeakReference<Activity> owner;
 +            Tracker(Activity activity) { owner = new WeakReference<>(activity); }
 +            void capture() {
-+                Activity activity = owner.get();
-+                if (activity == null || foreground.get() != activity) return;
-+                Configuration configuration = activity.getResources().getConfiguration();
-+                // Activity resources reflect this app window, including split-screen and density.
-+                // Do not use smallestScreenWidthDp: that cannot distinguish the two Fold windows.
-+                kind = FoldReelsPolicy.classify(configuration.screenWidthDp, configuration.screenHeightDp);
++                Watcher.this.capture(owner.get());
 +            }
 +            @Override public void onConfigurationChanged(Configuration configuration) { capture(); }
 +            @Override public void onLowMemory() {}
