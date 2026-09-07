@@ -1,5 +1,5 @@
 diff --git a/extensions/instagram/build.gradle.kts b/extensions/instagram/build.gradle.kts
-index 5afc40d..0aa90e4 100644
+index 5afc40d..d519ca4 100644
 --- a/extensions/instagram/build.gradle.kts
 +++ b/extensions/instagram/build.gradle.kts
 @@ -1,5 +1,7 @@
@@ -10,7 +10,7 @@ index 5afc40d..0aa90e4 100644
  
      defaultConfig {
          minSdk = 26
-@@ -7,6 +9,8 @@ android {
+@@ -7,9 +9,19 @@ android {
  }
  
  dependencies {
@@ -19,6 +19,17 @@ index 5afc40d..0aa90e4 100644
      compileOnly(project(":extensions:shared:library"))
      compileOnly(project(":extensions:instagram:stub"))
      compileOnly(libs.morphe.extensions.library)
+     compileOnly(libs.annotation)
+     compileOnly(libs.appcompat)
+ }
++
++// Keep actionable assertion values in Actions logs when a device-free regression fails.
++tasks.withType<Test>().configureEach {
++    testLogging {
++        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
++        showStandardStreams = true
++    }
++}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/devFlags/HookFlags.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/devFlags/HookFlags.java
 index 86d6a1c..daf6f4e 100644
 --- a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/devFlags/HookFlags.java
@@ -1486,10 +1497,10 @@ index c638224..9d7d3bf 100644
              addPreference(
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
 new file mode 100644
-index 0000000..b5c67bb
+index 0000000..3ec286c
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,217 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1498,6 +1509,8 @@ index 0000000..b5c67bb
 +import android.graphics.Matrix;
 +import android.graphics.Rect;
 +import android.graphics.RectF;
++import android.os.Looper;
++import org.robolectric.Shadows;
 +import android.view.MotionEvent;
 +import android.view.TextureView;
 +import android.view.View;
@@ -1566,7 +1579,7 @@ index 0000000..b5c67bb
 +        assertEquals(3, renderer.surfaceCount());
 +        for (TextureView video : videos) { assertTrue(video.getScaleX() > 1.2f); assertNotNull(video.getClipBounds()); }
 +        RectF above = displayedClip(videos.get(0)), centre = displayedClip(videos.get(1)), below = displayedClip(videos.get(2));
-+        assertEquals(above.bottom, centre.top, 2.6f); assertEquals(centre.bottom, below.top, 2.6f);
++        assertEquals("clips=" + above + " / " + centre + " / " + below, above.bottom, centre.top, 2.6f); assertEquals(centre.bottom, below.top, 2.6f);
 +    }
 +    @Test public void everySwipeFrameUsesCachedPlayersWithoutDiscoveryOrScalePopping() {
 +        renderer.discover(viewer); RectF viewport = fullViewport();
@@ -1583,7 +1596,7 @@ index 0000000..b5c67bb
 +        renderer.discover(viewer); frame(fullViewport(), true);
 +        TextureView video = videos.get(1); float first = video.getTranslationY();
 +        for (int i = 0; i < 50; i++) frame(fullViewport(), true);
-+        assertEquals(first, video.getTranslationY(), .001f);
++        assertEquals("bounds=" + bounds(video) + " clip=" + video.getClipBounds() + " scale=" + video.getScaleX(), first, video.getTranslationY(), .001f);
 +        video.setTranslationX(17); // A native player/recycling update replaces one property.
 +        frame(fullViewport(), true); renderer.restore(); clipping.restore();
 +        assertEquals(17, video.getTranslationX(), .001f); assertEquals(1, video.getScaleX(), .001f);
@@ -1628,7 +1641,7 @@ index 0000000..b5c67bb
 +    }
 +    long eventTime = 100;
 +    MotionEvent touch(int action, float x, float y) { return MotionEvent.obtain(100, ++eventTime, action, x, y, 0); }
-+    void send(int action, float x, float y) { MotionEvent event = touch(action, x, y); viewer.dispatchTouchEvent(event); event.recycle(); }
++    void send(int action, float x, float y) { MotionEvent event = touch(action, x, y); viewer.dispatchTouchEvent(event); event.recycle(); if (action == MotionEvent.ACTION_UP) Shadows.shadowOf(Looper.getMainLooper()).idle(); }
 +    float[] localCentre(View view) { RectF rect = bounds(view); RectF root = bounds(viewer); return new float[]{rect.centerX() - root.left, rect.centerY() - root.top}; }
 +
 +    @Test public void movesTheWholeRailAtSevenOrFourteenDpWithoutDrift() {
