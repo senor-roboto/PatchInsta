@@ -23,43 +23,96 @@ index 86d6a1c..daf6f4e 100644
              // Sometimes I want to block all the subflags inside a universal ID.
              // In which case I would only add the universal ID in the BOOL_MAP map.
              // If a boolean value is found then it will return else it will check for for the usual config ID
+diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/overflowMenuButton/reels/AddReelButton.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/overflowMenuButton/reels/AddReelButton.java
+index b6af790..de3e94a 100644
+--- a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/overflowMenuButton/reels/AddReelButton.java
++++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/overflowMenuButton/reels/AddReelButton.java
+@@ -98,6 +98,13 @@ public class AddReelButton {
+ 
+     // Called from hook — passes the real current carousel index.
+     public static void includeCustomReelOverflowButtons(Context context, Object helperObject, Object mediaObject, int currentMediaIndex){
++        if (app.morphe.extension.instagram.patches.reels.FoldReels.isEnabled()) {
++            AddReelButton.addReelButton(context, new ReelOverflowButton(
++                    UI.DRAWABLE_GEAR_ICON,
++                    new app.morphe.extension.instagram.patches.overflowMenuButton.reels.buttons.FoldLayoutButton(
++                            context, mediaObject, currentMediaIndex),
++                    str("piko_fold_reels_menu_title")), helperObject);
++        }
+         if(Pref.pikoDebug()){
+             AddReelButton.addDebugButton(context, helperObject, mediaObject, currentMediaIndex);
+         }
+@@ -113,4 +120,4 @@ public class AddReelButton {
+     }
+ 
+ 
+-}
+\ No newline at end of file
++}
+diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/overflowMenuButton/reels/buttons/FoldLayoutButton.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/overflowMenuButton/reels/buttons/FoldLayoutButton.java
+new file mode 100644
+index 0000000..366f539
+--- /dev/null
++++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/overflowMenuButton/reels/buttons/FoldLayoutButton.java
+@@ -0,0 +1,13 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.morphe.extension.instagram.patches.overflowMenuButton.reels.buttons;
++
++import android.content.Context;
++import android.view.View;
++import app.morphe.extension.instagram.patches.reels.FoldReels;
++
++public final class FoldLayoutButton extends ReelButton {
++    public FoldLayoutButton(Context context, Object mediaObject, int currentMediaIndex) {
++        super(context, mediaObject, currentMediaIndex);
++    }
++    @Override public void onClick(View view) { FoldReels.showLayoutOptions(context); }
++}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
 new file mode 100644
-index 0000000..0243d83
+index 0000000..0d88db8
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,308 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
++import static app.morphe.extension.instagram.utils.IgStr.str;
 +import android.app.Activity;
++import android.app.AlertDialog;
 +import android.app.Application;
 +import android.content.ComponentCallbacks;
 +import android.content.Context;
++import android.content.ContextWrapper;
 +import android.content.res.Configuration;
++import android.graphics.Rect;
 +import android.os.Bundle;
++import android.os.Handler;
++import android.os.Looper;
++import android.os.SystemClock;
 +import android.view.View;
++import android.widget.Toast;
 +import java.lang.ref.WeakReference;
++import java.util.ArrayList;
 +import java.util.HashMap;
++import java.util.Iterator;
 +import java.util.Map;
++import java.util.WeakHashMap;
 +import app.morphe.extension.crimera.sharedPreference.SharedPref;
 +import app.morphe.extension.instagram.settings.Settings;
 +import app.morphe.extension.shared.Utils;
++import app.morphe.extension.shared.Logger;
 +
-+/**
-+ * Observes window configuration on the UI thread. Flag reads use a volatile enum:
-+ * no Activity/View access on Instagram's background configuration threads.
-+ * A flag already cached by Instagram may require reopening the Reels viewer.
-+ */
++/** Native flags plus a scoped, debounced recreation of the Activity hosting visible Reels. */
 +public final class FoldReels {
 +    private static volatile boolean installed;
 +    private static volatile FoldReelsPolicy.WindowKind kind = FoldReelsPolicy.WindowKind.UNKNOWN;
 +    private static final Watcher watcher = new Watcher();
++    private static final WeakHashMap<View, Boolean> observedViewers = new WeakHashMap<>();
 +
 +    private FoldReels() {}
 +
 +    public static synchronized void install() {
-+        if (installed) return; // Piko currently invokes HookFlags.load twice.
++        if (installed) return; // Piko invokes HookFlags.load twice.
 +        Context context = Utils.getContext();
 +        if (context == null) return;
 +        Context app = context.getApplicationContext();
@@ -68,74 +121,260 @@ index 0000000..0243d83
 +        installed = true;
 +    }
 +
++    public static boolean isEnabled() {
++        return installed && SharedPref.getBooleanPref(Settings.ADAPTIVE_FOLD_REELS);
++    }
++
 +    public static Boolean override(String key) {
-+        if (!installed) return null; // Bundling the sources does not activate the patch.
-+        return FoldReelsPolicy.override(key, kind,
-+                SharedPref.getBooleanPref(Settings.ADAPTIVE_FOLD_REELS),
-+                SharedPref.getBooleanPref(Settings.FOLD_REELS_COVER_CROP));
++        if (!installed || !FoldReelsPolicy.handles(key)) return null;
++        // UI-thread flag queries can happen before our layout/configuration callback.
++        // Refresh before returning the flag; background callers only read the volatile snapshot.
++        if (Looper.myLooper() == Looper.getMainLooper()) watcher.captureForeground();
++        return FoldReelsPolicy.override(key, kind, isEnabled(),
++                SharedPref.getBooleanPref(Settings.FOLD_REELS_COVER_CROP),
++                SharedPref.getBooleanPref(Settings.FOLD_REELS_INNER_CROP));
++    }
++
++    private static Activity activityOf(Context context) {
++        for (int depth = 0; context != null && depth < 20; depth++) {
++            if (context instanceof Activity) return (Activity) context;
++            if (!(context instanceof ContextWrapper)) return null;
++            Context next = ((ContextWrapper) context).getBaseContext();
++            if (next == context) return null;
++            context = next;
++        }
++        return null;
++    }
++
++    /** Injected only into constructors of Instagram's known ClipsSwipeRefreshLayout. */
++    public static void attachViewer(View view) {
++        if (Looper.myLooper() != Looper.getMainLooper()) {
++            view.post(() -> attachViewer(view));
++            return;
++        }
++        if (observedViewers.containsKey(view)) return; // Constructor chaining.
++        observedViewers.put(view, true);
++        view.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
++            @Override public void onViewAttachedToWindow(View v) { watcher.addViewer(v); }
++            @Override public void onViewDetachedFromWindow(View v) { watcher.removeViewer(v); }
++        });
++        if (view.isAttachedToWindow()) watcher.addViewer(view);
++    }
++
++    public static void showLayoutOptions(Context context) {
++        Activity activity = activityOf(context);
++        if (activity == null) activity = watcher.foreground.get();
++        if (activity == null || activity.isFinishing() || activity.isDestroyed() || !isEnabled()) return;
++        final Activity owner = activity;
++        CharSequence[] options = {
++                str("piko_fold_reels_inner_fit"), str("piko_fold_reels_inner_crop")
++        };
++        new AlertDialog.Builder(owner)
++                .setTitle(str("piko_fold_reels_menu_title"))
++                .setSingleChoiceItems(options,
++                        SharedPref.getBooleanPref(Settings.FOLD_REELS_INNER_CROP) ? 1 : 0,
++                        (dialog, which) -> {
++                            boolean saved = SharedPref.setBooleanPref(
++                                    Settings.FOLD_REELS_INNER_CROP.key, which == 1);
++                            dialog.dismiss();
++                            if (saved) watcher.manualRefresh(owner);
++                        })
++                .setNeutralButton(str("piko_fold_reels_refresh_now"),
++                        (dialog, which) -> watcher.manualRefresh(owner))
++                .setNegativeButton(android.R.string.cancel, null)
++                .show();
 +    }
 +
 +    private static final class Watcher implements Application.ActivityLifecycleCallbacks {
 +        private final Map<Activity, Tracker> trackers = new HashMap<>();
 +        private WeakReference<Activity> foreground = new WeakReference<>(null);
++        private final Handler handler = new Handler(Looper.getMainLooper());
 +
-+        private void activate(Activity activity) {
-+            foreground = new WeakReference<>(activity);
++        private Tracker tracker(Activity activity) {
 +            Tracker tracker = trackers.get(activity);
 +            if (tracker == null) {
 +                tracker = new Tracker(activity);
 +                trackers.put(activity, tracker);
-+                activity.registerComponentCallbacks(tracker);
-+                activity.getWindow().getDecorView().addOnLayoutChangeListener(tracker);
 +            }
++            return tracker;
++        }
++
++        private void activate(Activity activity, boolean attachObservers) {
++            foreground = new WeakReference<>(activity);
++            Tracker tracker = tracker(activity);
++            if (attachObservers) tracker.attachObservers();
 +            tracker.capture();
 +        }
 +
-+        private void capture(Activity activity) {
-+            if (activity == null || foreground.get() != activity) return;
-+            Configuration configuration = activity.getResources().getConfiguration();
-+            // Activity resources reflect this app window, including split-screen and density.
-+            // Do not use smallestScreenWidthDp: it cannot distinguish the two Fold windows.
-+            kind = FoldReelsPolicy.classify(configuration.screenWidthDp, configuration.screenHeightDp);
++        private void captureForeground() {
++            Activity activity = foreground.get();
++            if (activity != null) {
++                Tracker tracker = trackers.get(activity);
++                if (tracker != null) tracker.capture();
++            }
 +        }
 +
-+        // Read geometry early, but do NOT create the decor before onCreate: Instagram may
-+        // still need to request window features or set its theme. Attach listeners later.
-+        @Override public void onActivityPreCreated(Activity activity, Bundle state) {
-+            foreground = new WeakReference<>(activity);
-+            capture(activity);
++        private void addViewer(View view) {
++            Activity activity = activityOf(view.getContext());
++            if (activity == null) return;
++            Tracker tracker = tracker(activity);
++            for (WeakReference<View> ref : tracker.viewers) if (ref.get() == view) return;
++            tracker.viewers.add(new WeakReference<>(view));
++            tracker.capture();
 +        }
-+        @Override public void onActivityCreated(Activity activity, Bundle state) { activate(activity); }
-+        @Override public void onActivityPreResumed(Activity activity) { activate(activity); }
-+        @Override public void onActivityResumed(Activity activity) { activate(activity); }
++
++        private void removeViewer(View view) {
++            Activity activity = activityOf(view.getContext());
++            Tracker tracker = trackers.get(activity);
++            if (tracker == null) return;
++            tracker.viewers.removeIf(ref -> ref.get() == null || ref.get() == view);
++            // A detach/reattach may be part of a fold: do not reset the pending transition here.
++        }
++
++        private void manualRefresh(Activity activity) {
++            // Let Instagram's overflow menu and the options dialog dismiss before recreating.
++            handler.postDelayed(() -> {
++                Tracker tracker = trackers.get(activity);
++                if (tracker != null && tracker.resumed && foreground.get() == activity
++                        && !activity.isFinishing() && !activity.isDestroyed() && isEnabled()) {
++                    tracker.recreate();
++                }
++            }, 300);
++        }
++
++        @Override public void onActivityPreCreated(Activity activity, Bundle state) {
++            // Never create decor before Instagram requests its window features/theme.
++            activate(activity, false);
++        }
++        @Override public void onActivityCreated(Activity activity, Bundle state) { activate(activity, true); }
++        @Override public void onActivityPreResumed(Activity activity) { activate(activity, true); }
++        @Override public void onActivityResumed(Activity activity) {
++            activate(activity, true);
++            tracker(activity).resumed = true;
++            tracker(activity).capture();
++        }
 +        @Override public void onActivityStarted(Activity activity) {}
 +        @Override public void onActivityPaused(Activity activity) {
-+            if (foreground.get() == activity) {
-+                foreground.clear();
-+                kind = FoldReelsPolicy.WindowKind.UNKNOWN;
++            Tracker tracker = trackers.get(activity);
++            if (tracker != null) {
++                tracker.resumed = false;
++                tracker.cancelCheck();
 +            }
++            // Keep the latest known geometry. Pausing during a fold must not restore native defaults.
 +        }
 +        @Override public void onActivityStopped(Activity activity) {}
 +        @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
 +        @Override public void onActivityDestroyed(Activity activity) {
 +            Tracker tracker = trackers.remove(activity);
-+            if (tracker != null) {
-+                activity.unregisterComponentCallbacks(tracker);
-+                activity.getWindow().getDecorView().removeOnLayoutChangeListener(tracker);
-+            }
-+            if (foreground.get() == activity) {
-+                foreground.clear();
-+                kind = FoldReelsPolicy.WindowKind.UNKNOWN;
-+            }
++            if (tracker != null) tracker.dispose();
++            if (foreground.get() == activity) foreground.clear();
++            // Preserve the last valid snapshot until the replacement Activity supplies its own.
 +        }
 +
 +        private final class Tracker implements ComponentCallbacks, View.OnLayoutChangeListener {
 +            private final WeakReference<Activity> owner;
-+            Tracker(Activity activity) { owner = new WeakReference<>(activity); }
-+            void capture() {
-+                Watcher.this.capture(owner.get());
++            private final ArrayList<WeakReference<View>> viewers = new ArrayList<>();
++            private final FoldReelsRefreshGate gate = new FoldReelsRefreshGate();
++            private boolean observersAttached;
++            private boolean resumed;
++            private boolean checkPosted;
++            private boolean recreating;
++            private boolean seenViewer;
++            private final Rect visibleBounds = new Rect();
++            private final Runnable check = this::checkTransition;
++
++            private void checkTransition() {
++                checkPosted = false;
++                capture();
++                Activity activity = owner.get();
++                if (activity == null || foreground.get() != activity || recreating) return;
++                View focus = activity.getCurrentFocus();
++                if (focus != null && focus.onCheckIsTextEditor()) {
++                    // Do not automatically disrupt a comment/message being typed.
++                    cancelCheck();
++                    return;
++                }
++                if (gate.ready(SystemClock.uptimeMillis(), resumed, hasVisibleViewer(),
++                        isEnabled() && SharedPref.getBooleanPref(Settings.FOLD_REELS_AUTO_REFRESH))) {
++                    recreate();
++                }
 +            }
-+            @Override public void onConfigurationChanged(Configuration configuration) { capture(); }
++
++            Tracker(Activity activity) { owner = new WeakReference<>(activity); }
++
++            void attachObservers() {
++                Activity activity = owner.get();
++                if (activity == null || observersAttached) return;
++                activity.registerComponentCallbacks(this);
++                activity.getWindow().getDecorView().addOnLayoutChangeListener(this);
++                observersAttached = true;
++            }
++
++            void capture() {
++                Activity activity = owner.get();
++                if (activity == null || foreground.get() != activity || recreating) return;
++                Configuration config = activity.getResources().getConfiguration();
++                FoldReelsPolicy.WindowKind next =
++                        FoldReelsPolicy.classify(config.screenWidthDp, config.screenHeightDp);
++                if (next == FoldReelsPolicy.WindowKind.UNKNOWN) return;
++                kind = next;
++                boolean visible = hasVisibleViewer();
++                if (visible) seenViewer = true;
++                // Preserve the mode used by a viewer that was temporarily detached during a fold.
++                gate.observe(next, SystemClock.uptimeMillis(), seenViewer);
++                if (gate.pending() && resumed && visible && isEnabled()
++                        && SharedPref.getBooleanPref(Settings.FOLD_REELS_AUTO_REFRESH)) {
++                    if (!checkPosted) {
++                        checkPosted = true;
++                        handler.postDelayed(check, FoldReelsRefreshGate.SETTLE_MS);
++                    }
++                } else cancelCheck();
++            }
++
++            boolean hasVisibleViewer() {
++                for (Iterator<WeakReference<View>> it = viewers.iterator(); it.hasNext();) {
++                    View v = it.next().get();
++                    if (v == null) { it.remove(); continue; }
++                    if (v.isAttachedToWindow() && v.isShown() && v.getWidth() > 0 && v.getHeight() > 0
++                            && v.getGlobalVisibleRect(visibleBounds)
++                            && visibleBounds.width() >= v.getWidth() / 2
++                            && visibleBounds.height() >= v.getHeight() / 2) return true;
++                }
++                return false;
++            }
++
++            void recreate() {
++                Activity activity = owner.get();
++                if (activity == null || recreating || activity.isFinishing() || activity.isDestroyed()) return;
++                recreating = true;
++                gate.markRequested();
++                cancelCheck();
++                try {
++                    // Standard Android recreation; no process kill, fake rotation or navigation.
++                    // Whether the same Reel resumes depends on Instagram's saved-state handling.
++                    activity.recreate();
++                } catch (RuntimeException error) {
++                    Logger.printException(() -> "Fold Reels: Activity recreation failed", error);
++                    Toast.makeText(activity, str("piko_fold_reels_refresh_failed"), Toast.LENGTH_LONG).show();
++                }
++            }
++
++            void cancelCheck() {
++                if (checkPosted) handler.removeCallbacks(check);
++                checkPosted = false;
++            }
++
++            void dispose() {
++                cancelCheck();
++                Activity activity = owner.get();
++                if (activity != null && observersAttached) {
++                    activity.unregisterComponentCallbacks(this);
++                    activity.getWindow().getDecorView().removeOnLayoutChangeListener(this);
++                }
++                viewers.clear();
++            }
++
++            @Override public void onConfigurationChanged(Configuration config) { capture(); }
 +            @Override public void onLowMemory() {}
 +            @Override public void onLayoutChange(View v, int l, int t, int r, int b,
 +                    int oldL, int oldT, int oldR, int oldB) { capture(); }
@@ -144,10 +383,10 @@ index 0000000..0243d83
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPolicy.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPolicy.java
 new file mode 100644
-index 0000000..de6b68a
+index 0000000..498bc30
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPolicy.java
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,56 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -155,22 +394,22 @@ index 0000000..de6b68a
 +public final class FoldReelsPolicy {
 +    private FoldReelsPolicy() {}
 +
-+    public enum WindowKind { UNKNOWN, COMPACT_PORTRAIT, WIDE, OTHER }
++    public enum WindowKind { UNKNOWN, COMPACT, WIDE }
 +
 +    public static WindowKind classify(float widthDp, float heightDp) {
 +        if (!Float.isFinite(widthDp) || !Float.isFinite(heightDp)
 +                || widthDp <= 0 || heightDp <= 0) return WindowKind.UNKNOWN;
-+        if (widthDp >= 600f) return WindowKind.WIDE;
-+        if (heightDp > widthDp) return WindowKind.COMPACT_PORTRAIT;
-+        return WindowKind.OTHER;
++        // Rotation alone must not turn the cover window into the inner-screen mode.
++        return Math.min(widthDp, heightDp) >= 600f ? WindowKind.WIDE : WindowKind.COMPACT;
 +    }
 +
 +    /** null delegates to Piko / Instagram; only exact, audited Boolean keys match. */
 +    public static Boolean override(String key, WindowKind kind,
-+                                   boolean enabled, boolean coverCrop) {
++                                   boolean enabled, boolean coverCrop, boolean innerCrop) {
 +        if (!enabled || kind == null || kind == WindowKind.UNKNOWN || key == null) return null;
 +        boolean wide = kind == WindowKind.WIDE;
-+        boolean crop = kind == WindowKind.COMPACT_PORTRAIT && coverCrop;
++        boolean crop = wide ? innerCrop : coverCrop;
++        boolean wideLayout = wide && !innerCrop;
 +        switch (key) {
 +            // ig_android_reels_dynamic_cropping_h1_2025
 +            // Native numerical thresholds and baked-in black borders are not overridden.
@@ -179,7 +418,7 @@ index 0000000..de6b68a
 +            case "83325::4": return crop ? Boolean.FALSE : null; // crop_ads_only
 +            // ig_reels_width_change_large_screens / ..._user_based
 +            case "55842::0":
-+            case "55943::0": return wide;
++            case "55943::0": return wideLayout;
 +            // ig_pandroid_foldables: retain Instagram's native controls and hit targets.
 +            case "111584::9":  // reels_viewer_two_pane_enabled
 +            case "111584::10": // reels_viewer_ui_refresh
@@ -187,7 +426,7 @@ index 0000000..de6b68a
 +            case "111584::12": // watch_and_comment_insets_enabled
 +            case "111584::25": // reels_viewer_two_pane_comments_slide_fix
 +            case "111584::27": // reels_viewer_two_pane_full_video_height
-+                return wide;
++                return wideLayout;
 +            case "111584::17": // large_screen_gating_can_resize_fix
 +            case "111584::26": // nav_bar_visibility_restore_fix
 +            case "56160::1":   // is_mw_bottom_padding_enabled
@@ -196,17 +435,65 @@ index 0000000..de6b68a
 +            default: return null;
 +        }
 +    }
++
++    public static boolean handles(String key) {
++        // No Android resource reads for unrelated MobileConfig queries.
++        return key != null && (key.startsWith("83325::") || key.startsWith("55842::")
++                || key.startsWith("55943::") || key.startsWith("111584::")
++                || key.equals("56160::1") || key.equals("72006::9"));
++    }
++}
+diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRefreshGate.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRefreshGate.java
+new file mode 100644
+index 0000000..5cb555e
+--- /dev/null
++++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRefreshGate.java
+@@ -0,0 +1,33 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.morphe.extension.instagram.patches.reels;
++
++import app.morphe.extension.instagram.patches.reels.FoldReelsPolicy.WindowKind;
++
++/** Pure state machine: at most one recreation per Activity, after a stable mode change. */
++public final class FoldReelsRefreshGate {
++    public static final long SETTLE_MS = 450;
++    private WindowKind rendered = WindowKind.UNKNOWN;
++    private WindowKind current = WindowKind.UNKNOWN;
++    private long changedAt;
++    private boolean requested;
++
++    public void observe(WindowKind next, long now, boolean viewerPresent) {
++        if (next == null || next == WindowKind.UNKNOWN || requested) return;
++        if (current != next) {
++            current = next;
++            changedAt = now;
++        }
++        // No viewer exists yet: it will be created with the latest mode.
++        if (rendered == WindowKind.UNKNOWN || !viewerPresent) rendered = current;
++    }
++
++    public boolean pending() {
++        return !requested && rendered != WindowKind.UNKNOWN && current != rendered;
++    }
++
++    public boolean ready(long now, boolean resumed, boolean viewerVisible, boolean enabled) {
++        return pending() && resumed && viewerVisible && enabled && now - changedAt >= SETTLE_MS;
++    }
++
++    public void markRequested() { requested = true; }
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/settings/Settings.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/settings/Settings.java
-index 60a48a0..e8dddf0 100644
+index 60a48a0..08b49a2 100644
 --- a/extensions/instagram/src/main/java/app/morphe/extension/instagram/settings/Settings.java
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/settings/Settings.java
-@@ -9,6 +9,8 @@ import app.morphe.extension.crimera.settings.BooleanSetting;
+@@ -9,6 +9,10 @@ import app.morphe.extension.crimera.settings.BooleanSetting;
  import app.morphe.extension.crimera.settings.StringSetting;
  
  public class Settings {
 +    public static final BooleanSetting ADAPTIVE_FOLD_REELS = new BooleanSetting("adaptive_fold_reels", true);
 +    public static final BooleanSetting FOLD_REELS_COVER_CROP = new BooleanSetting("fold_reels_cover_crop", true);
++    public static final BooleanSetting FOLD_REELS_INNER_CROP = new BooleanSetting("fold_reels_inner_crop", false);
++    public static final BooleanSetting FOLD_REELS_AUTO_REFRESH = new BooleanSetting("fold_reels_auto_refresh", true);
      public static final BooleanSetting PIKO_DEBUG = new BooleanSetting("piko_debug", false);
      public static final BooleanSetting MATERIAL_YOU_THEME = new BooleanSetting("material_you_theme", false);
      public static final BooleanSetting AMOLED_THEME = new BooleanSetting("amoled_theme", false);
@@ -226,10 +513,10 @@ index 958c6a7..afdfe43 100644
      //DM section
      public static boolean unlimitedReplaysOnEphemeralMedia = false;
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/settings/preference/ScreenBuilder.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/settings/preference/ScreenBuilder.java
-index c638224..8b19837 100644
+index c638224..563a0f8 100644
 --- a/extensions/instagram/src/main/java/app/morphe/extension/instagram/settings/preference/ScreenBuilder.java
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/settings/preference/ScreenBuilder.java
-@@ -486,6 +486,13 @@ public class ScreenBuilder {
+@@ -486,6 +486,17 @@ public class ScreenBuilder {
      public void buildMiscSection() {
          if (!(SettingsStatus.miscSection())) return;
  
@@ -238,13 +525,27 @@ index c638224..8b19837 100644
 +                    str("piko_fold_reels_desc"), Settings.ADAPTIVE_FOLD_REELS));
 +            addPreference(helper.switchPreference(str("piko_fold_reels_crop_title"),
 +                    str("piko_fold_reels_crop_desc"), Settings.FOLD_REELS_COVER_CROP));
++            addPreference(helper.switchPreference(str("piko_fold_reels_inner_title"),
++                    str("piko_fold_reels_inner_desc"), Settings.FOLD_REELS_INNER_CROP));
++            addPreference(helper.switchPreference(str("piko_fold_reels_auto_title"),
++                    str("piko_fold_reels_auto_desc"), Settings.FOLD_REELS_AUTO_REFRESH));
 +        }
 +
          // PreferenceCategory category= addCategory(str("piko_category_misc"));
          if (MaterialYouTheme.isAmoledAvailable()) {
              addPreference(
+diff --git a/gradle.properties b/gradle.properties
+index 10591c8..3b7e821 100644
+--- a/gradle.properties
++++ b/gradle.properties
+@@ -2,4 +2,4 @@ org.gradle.parallel = true
+ org.gradle.caching = true
+ kotlin.code.style = official
+ android.useAndroidX = true
+-version = 3.9.0
++version = 3.9.0-foldreels.2
 diff --git a/patches/build.gradle.kts b/patches/build.gradle.kts
-index 4a17b30..23ce9fe 100644
+index 4a17b30..458b5b0 100644
 --- a/patches/build.gradle.kts
 +++ b/patches/build.gradle.kts
 @@ -2,8 +2,8 @@ group = "crimera"
@@ -253,137 +554,249 @@ index 4a17b30..23ce9fe 100644
      about {
 -        name = "Piko"
 -        description = "Morphe patches focused on Twitter/X"
-+        name = "Piko + Adaptive Fold Reels (unofficial)"
++        name = "Piko + Adaptive Fold Reels v2 (unofficial)"
 +        description = "Piko with experimental native Instagram foldable layout overrides"
          source = "git@github.com:crimera/piko.git"
          author = "crimera"
          contact = "na"
 diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
 new file mode 100644
-index 0000000..293ecaa
+index 0000000..69f9e91
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,52 @@
 +/*
 + * Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE.
 + */
 +package app.crimera.patches.instagram.misc.reels
 +
 +import app.crimera.patches.instagram.misc.settings.settingsPatch
++import app.crimera.patches.instagram.misc.overflowMenuButton.reels.hookReelOverflowMenuButton
 +import app.crimera.patches.instagram.utils.Constants.COMPATIBILITY_INSTAGRAM
 +import app.crimera.patches.instagram.utils.addFlags
 +import app.crimera.patches.instagram.utils.enableSettings
 +import app.morphe.patcher.patch.bytecodePatch
++import app.morphe.patcher.Fingerprint
++import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
++import app.morphe.patcher.extensions.InstructionExtensions.instructions
++import com.android.tools.smali.dexlib2.Opcode
++
++private object FoldReelsViewerConstructors : Fingerprint(
++    definingClass = "Linstagram/features/clips/viewer/ui/ClipsSwipeRefreshLayout;",
++    name = "<init>",
++    returnType = "V",
++)
 +
 +@Suppress("unused")
 +val adaptiveFoldReelsPatch = bytecodePatch(
 +    name = "Adaptive Fold Reels (experimental)",
-+    description = "Selects native Reels cropping and foldable layout flags using current window size. " +
-+        "Includes an in-app off switch. Native crop thresholds still apply; device testing required.",
++    description = "Adapts Reels to foldable windows, refreshes visible Reels after a mode change, " +
++        "and adds a framing menu. Refreshing may reload the current Reel. Experimental v2.",
 +    default = false,
 +) {
 +    // Deliberately inherits the pinned Piko target, 439.0.0.37.89 / arm64.
 +    // Do not broaden compatibility without auditing the MobileConfig mappings.
 +    compatibleWith(COMPATIBILITY_INSTAGRAM)
-+    dependsOn(settingsPatch)
++    dependsOn(settingsPatch, hookReelOverflowMenuButton)
 +    execute {
 +        enableSettings("adaptiveFoldReels")
 +        addFlags("adaptiveFoldReelsFlags")
++        // Reuse the exact viewer class already targeted by Piko's Disable Reels scrolling patch.
++        // A constructor hook detects actual Reels without guessing resource IDs or traversing the app.
++        FoldReelsViewerConstructors.matchAll(1..Int.MAX_VALUE).forEach { match ->
++            match.method.apply {
++                val returns = instructions.withIndex()
++                    .filter { it.value.opcode == Opcode.RETURN_VOID }
++                    .map { it.index }
++                returns.asReversed().forEach { index ->
++                    addInstruction(index,
++                        "invoke-static/range {p0 .. p0}, " +
++                            "Lapp/morphe/extension/instagram/patches/reels/FoldReels;->attachViewer(Landroid/view/View;)V")
++                }
++            }
++        }
 +    }
 +}
 diff --git a/patches/src/main/resources/addresources/values-fr-rFR/instagram/strings.xml b/patches/src/main/resources/addresources/values-fr-rFR/instagram/strings.xml
-index f49bffd..3eb385a 100644
+index f49bffd..32904c6 100644
 --- a/patches/src/main/resources/addresources/values-fr-rFR/instagram/strings.xml
 +++ b/patches/src/main/resources/addresources/values-fr-rFR/instagram/strings.xml
-@@ -1,5 +1,9 @@
+@@ -1,5 +1,18 @@
  <?xml version="1.0" encoding="utf-8"?>
  <resources>
 +    <string name="piko_fold_reels_title">Réels adaptés au Fold (expérimental)</string>
-+    <string name="piko_fold_reels_desc">Active les dispositions natives selon la taille de la fenêtre. Redémarrer Instagram après une modification. Si le pliage conserve la disposition précédente, rouvrir le lecteur de Réels.</string>
-+    <string name="piko_fold_reels_crop_title">Recadrer les Réels en portrait étroit</string>
-+    <string name="piko_fold_reels_crop_desc">Active le recadrage natif sous 600 dp. Instagram conserve ses limites de recadrage. Les fenêtres larges utilisent la disposition native pour pliables. Redémarrer Instagram après une modification.</string>
++    <string name="piko_fold_reels_desc">Active les dispositions natives selon la fenêtre. Redémarrer Instagram après une modification. La version 2 conserve le dernier format connu pendant les transitions.</string>
++    <string name="piko_fold_reels_crop_title">Recadrer les Réels en petite fenêtre</string>
++    <string name="piko_fold_reels_crop_desc">Active le recadrage natif si le plus petit côté de la fenêtre est inférieur à 600 dp, même après rotation. Instagram conserve ses limites de recadrage.</string>
++    <string name="piko_fold_reels_inner_title">Recadrer les Réels en grande fenêtre</string>
++    <string name="piko_fold_reels_inner_desc">Désactivé par défaut pour conserver la disposition native pour pliables. Aussi disponible dans le menu du Réel, sous Cadrage Fold. Actualiser le lecteur après modification.</string>
++    <string name="piko_fold_reels_auto_title">Actualiser les Réels au changement de format</string>
++    <string name="piko_fold_reels_auto_desc">Recrée l’écran Instagram après une transition stable petite/grande fenêtre, uniquement si les Réels sont visibles. Selon Instagram, cela peut recommencer le Réel ou revenir au fil.</string>
++    <string name="piko_fold_reels_menu_title">Cadrage Fold</string>
++    <string name="piko_fold_reels_inner_fit">Vidéo entière sur écran interne</string>
++    <string name="piko_fold_reels_inner_crop">Recadrer sur écran interne</string>
++    <string name="piko_fold_reels_refresh_now">Actualiser le lecteur</string>
++    <string name="piko_fold_reels_refresh_failed">Actualisation impossible. Fermer puis rouvrir les Réels.</string>
      <!-- Ads Section -->
      <string name="piko_category_ads">Publicités</string>
      <string name="piko_disable_ads">Désactiver les publicités</string>
 diff --git a/patches/src/main/resources/addresources/values/instagram/strings.xml b/patches/src/main/resources/addresources/values/instagram/strings.xml
-index c76b16f..5ec5d04 100644
+index c76b16f..e1baffc 100644
 --- a/patches/src/main/resources/addresources/values/instagram/strings.xml
 +++ b/patches/src/main/resources/addresources/values/instagram/strings.xml
-@@ -1,5 +1,9 @@
+@@ -1,5 +1,18 @@
  <?xml version="1.0" encoding="utf-8"?>
  <resources>
 +    <string name="piko_fold_reels_title">Adaptive Fold Reels (experimental)</string>
-+    <string name="piko_fold_reels_desc">Use native Reels layouts for the current window size. Restart Instagram after changing this setting. If folding keeps the previous layout, reopen the Reels viewer.</string>
-+    <string name="piko_fold_reels_crop_title">Crop Reels in narrow portrait windows</string>
-+    <string name="piko_fold_reels_crop_desc">Enable native dynamic cropping below 600 dp. Instagram still controls crop limits. Wide windows use the native foldable layout. Restart Instagram after changing this setting.</string>
++    <string name="piko_fold_reels_desc">Use native Reels layouts for the current window. Restart Instagram after changing this setting. Version 2 keeps the last known window mode during transitions.</string>
++    <string name="piko_fold_reels_crop_title">Crop Reels in compact windows</string>
++    <string name="piko_fold_reels_crop_desc">Enable native cropping when the shorter window dimension is below 600 dp, including after rotation. Instagram still controls crop limits.</string>
++    <string name="piko_fold_reels_inner_title">Crop Reels in large windows</string>
++    <string name="piko_fold_reels_inner_desc">Off by default to keep the native foldable layout. Also available in the Reel overflow menu under Fold framing. Refresh the viewer after changing this setting.</string>
++    <string name="piko_fold_reels_auto_title">Refresh Reels when changing window mode</string>
++    <string name="piko_fold_reels_auto_desc">Recreate the current Instagram screen after a stable compact/large window change, only while Reels are visible. This may restart the Reel or return to the feed, depending on Instagram.</string>
++    <string name="piko_fold_reels_menu_title">Fold framing</string>
++    <string name="piko_fold_reels_inner_fit">Full video on the inner screen</string>
++    <string name="piko_fold_reels_inner_crop">Crop on the inner screen</string>
++    <string name="piko_fold_reels_refresh_now">Refresh viewer</string>
++    <string name="piko_fold_reels_refresh_failed">Unable to refresh the viewer. Close and reopen Reels.</string>
      <!-- Ads Section -->
      <string name="piko_category_ads">Ads</string>
      <string name="piko_disable_ads">Disable ads</string>
 diff --git a/tests/fold-reels/FoldReelsPolicyTest.java b/tests/fold-reels/FoldReelsPolicyTest.java
 new file mode 100644
-index 0000000..33be51c
+index 0000000..ce111df
 --- /dev/null
 +++ b/tests/fold-reels/FoldReelsPolicyTest.java
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,122 @@
 +import app.morphe.extension.instagram.patches.reels.FoldReelsPolicy;
++import app.morphe.extension.instagram.patches.reels.FoldReelsRefreshGate;
 +import static app.morphe.extension.instagram.patches.reels.FoldReelsPolicy.WindowKind.*;
 +
-+/** JVM regression tests. These do not simulate Instagram's native rendering engine. */
++/** JVM regression tests. They do not simulate Instagram's renderer or Android lifecycle. */
 +public final class FoldReelsPolicyTest {
 +    private static int checks;
 +    private static void eq(Object expected, Object actual) {
 +        checks++;
 +        if (!java.util.Objects.equals(expected, actual))
-+            throw new AssertionError("Expected " + expected + ", got " + actual);
++            throw new AssertionError("Check " + checks + ": expected " + expected + ", got " + actual);
++    }
++    private static Boolean flag(String key, FoldReelsPolicy.WindowKind mode, boolean enabled,
++                                boolean cover, boolean inner) {
++        return FoldReelsPolicy.override(key, mode, enabled, cover, inner);
 +    }
 +    public static void main(String[] args) {
-+        // Example window sizes in dp, NOT claimed Galaxy Z Fold8 hardware dimensions.
-+        eq(COMPACT_PORTRAIT, FoldReelsPolicy.classify(420, 900));
++        // Illustrative dp windows, NOT claimed Fold8 hardware dimensions.
++        eq(COMPACT, FoldReelsPolicy.classify(420, 900));
++        eq(COMPACT, FoldReelsPolicy.classify(900, 420)); // cover rotation keeps its mode
 +        eq(WIDE, FoldReelsPolicy.classify(840, 900));
-+        eq(COMPACT_PORTRAIT, FoldReelsPolicy.classify(599, 900));
++        eq(WIDE, FoldReelsPolicy.classify(900, 840));
++        eq(COMPACT, FoldReelsPolicy.classify(599, 900));
++        eq(COMPACT, FoldReelsPolicy.classify(900, 599));
 +        eq(WIDE, FoldReelsPolicy.classify(600, 900));
-+        eq(WIDE, FoldReelsPolicy.classify(900, 420));
-+        eq(OTHER, FoldReelsPolicy.classify(500, 400));
-+        eq(OTHER, FoldReelsPolicy.classify(500, 500));
++        eq(WIDE, FoldReelsPolicy.classify(900, 600));
++        eq(COMPACT, FoldReelsPolicy.classify(500, 500));
 +        eq(UNKNOWN, FoldReelsPolicy.classify(0, 900));
 +        eq(UNKNOWN, FoldReelsPolicy.classify(-1, 900));
 +        eq(UNKNOWN, FoldReelsPolicy.classify(Float.NaN, 900));
 +        eq(UNKNOWN, FoldReelsPolicy.classify(900, Float.POSITIVE_INFINITY));
-+        eq(null, FoldReelsPolicy.override("83325::1", UNKNOWN, true, true));
-+        eq(null, FoldReelsPolicy.override("83325::1", null, true, true));
-+        eq(null, FoldReelsPolicy.override(null, WIDE, true, true));
-+        eq(null, FoldReelsPolicy.override("83325::1", WIDE, false, true));
-+        eq(null, FoldReelsPolicy.override("83325", WIDE, true, true));
-+        eq(null, FoldReelsPolicy.override("83325::0", WIDE, true, true)); // numeric threshold
-+        eq(null, FoldReelsPolicy.override("111584::29", WIDE, true, true)); // numeric width
-+        eq(null, FoldReelsPolicy.override("111584::30", WIDE, true, true)); // unrelated DMs
-+        eq(null, FoldReelsPolicy.override("999999::1", WIDE, true, true));
-+        eq(true, FoldReelsPolicy.override("83325::1", COMPACT_PORTRAIT, true, true));
-+        eq(false, FoldReelsPolicy.override("83325::1", COMPACT_PORTRAIT, true, false));
-+        eq(false, FoldReelsPolicy.override("83325::1", WIDE, true, true));
-+        eq(false, FoldReelsPolicy.override("83325::1", OTHER, true, true));
-+        eq(true, FoldReelsPolicy.override("83325::3", COMPACT_PORTRAIT, true, true));
-+        eq(false, FoldReelsPolicy.override("83325::4", COMPACT_PORTRAIT, true, true));
-+        eq(null, FoldReelsPolicy.override("83325::3", WIDE, true, true));
-+        eq(true, FoldReelsPolicy.override("111584::9", WIDE, true, true));
-+        eq(false, FoldReelsPolicy.override("111584::9", COMPACT_PORTRAIT, true, true));
-+        eq(true, FoldReelsPolicy.override("111584::27", WIDE, true, true));
-+        // Fold -> unfold -> narrow split screen: policy never caches the initial window kind.
-+        float[][] windows = {{420, 900}, {840, 900}, {420, 900}};
-+        Boolean[] crop = {true, false, true};
-+        for (int i = 0; i < windows.length; i++) {
-+            eq(crop[i], FoldReelsPolicy.override("83325::1",
-+                    FoldReelsPolicy.classify(windows[i][0], windows[i][1]), true, true));
-+        }
-+        System.out.println(checks + " policy checks passed (no Android/device validation).");
++        eq(null, flag("83325::1", UNKNOWN, true, true, false));
++        eq(null, flag("83325::1", null, true, true, false));
++        eq(null, flag(null, WIDE, true, true, false));
++        eq(null, flag("83325::1", WIDE, false, true, false));
++        eq(null, flag("83325", WIDE, true, true, false));
++        eq(null, flag("83325::0", WIDE, true, true, false)); // numeric threshold
++        eq(null, flag("111584::29", WIDE, true, true, false)); // numeric width
++        eq(null, flag("111584::30", WIDE, true, true, false)); // unrelated DMs
++        eq(null, flag("999999::1", WIDE, true, true, false));
++        eq(true, flag("83325::1", COMPACT, true, true, false));
++        eq(false, flag("83325::1", COMPACT, true, false, false));
++        eq(false, flag("83325::1", WIDE, true, true, false));
++        eq(true, flag("83325::3", COMPACT, true, true, false));
++        eq(false, flag("83325::4", COMPACT, true, true, false));
++        eq(null, flag("83325::3", WIDE, true, true, false));
++        eq(true, flag("111584::9", WIDE, true, true, false));
++        eq(false, flag("111584::9", COMPACT, true, true, false));
++        eq(true, flag("111584::27", WIDE, true, true, false));
++        // Inner crop disables the conflicting two-pane/width-change flags.
++        eq(true, flag("83325::1", WIDE, true, true, true));
++        eq(false, flag("111584::9", WIDE, true, true, true));
++        eq(false, flag("55842::0", WIDE, true, true, true));
++        eq(false, flag("55943::0", WIDE, true, true, true));
++        eq(false, flag("83325::1", COMPACT, true, false, true)); // independent cover preference
++        eq(false, FoldReelsPolicy.handles("999999::1"));
++        eq(false, FoldReelsPolicy.handles(null));
++        eq(true, FoldReelsPolicy.handles("83325::1"));
++
++        // First opening must never recreate the Activity.
++        FoldReelsRefreshGate gate = new FoldReelsRefreshGate();
++        gate.observe(COMPACT, 0, false);
++        gate.observe(COMPACT, 100, true);
++        eq(false, gate.ready(1000, true, true, true));
++        // Unfold: debounce, require visible Reels + foreground + enabled switch.
++        gate.observe(WIDE, 1000, true);
++        eq(true, gate.pending());
++        eq(false, gate.ready(1449, true, true, true));
++        eq(false, gate.ready(1450, false, true, true));
++        eq(false, gate.ready(1450, true, false, true));
++        eq(false, gate.ready(1450, true, true, false));
++        eq(true, gate.ready(1450, true, true, true));
++        // A transient unknown configuration must not reset the settled transition.
++        gate.observe(UNKNOWN, 1440, true);
++        eq(true, gate.ready(1450, true, true, true));
++        gate.markRequested();
++        eq(false, gate.pending());
++        eq(false, gate.ready(2000, true, true, true));
++        gate.observe(COMPACT, 2100, true);
++        eq(false, gate.ready(3000, true, true, true)); // no loops in old Activity
++
++        // New Activity starts wide; rotation preserves its mode; closing must refresh once.
++        FoldReelsRefreshGate replacement = new FoldReelsRefreshGate();
++        replacement.observe(WIDE, 2000, false);
++        replacement.observe(WIDE, 2100, true);
++        replacement.observe(FoldReelsPolicy.classify(900, 840), 2200, true);
++        eq(false, replacement.ready(3000, true, true, true));
++        replacement.observe(COMPACT, 4000, true);
++        eq(true, replacement.ready(4450, true, true, true));
++        replacement.markRequested();
++        eq(false, replacement.ready(5000, true, true, true));
++
++        // Aborted fold returns to original mode without recreation.
++        FoldReelsRefreshGate aborted = new FoldReelsRefreshGate();
++        aborted.observe(COMPACT, 0, true);
++        aborted.observe(WIDE, 100, true);
++        aborted.observe(COMPACT, 200, true);
++        eq(false, aborted.pending());
++        eq(false, aborted.ready(1000, true, true, true));
++        // A second actual fold starts a fresh settling interval.
++        aborted.observe(WIDE, 1100, true);
++        eq(false, aborted.ready(1500, true, true, true));
++        eq(true, aborted.ready(1550, true, true, true));
++
++        // Outside Reels, adopt the new mode for future viewers without restarting the app.
++        FoldReelsRefreshGate outside = new FoldReelsRefreshGate();
++        outside.observe(COMPACT, 0, false);
++        outside.observe(WIDE, 1000, false);
++        outside.observe(WIDE, 2000, true);
++        eq(false, outside.ready(3000, true, true, true));
++
++        // Idempotent repeated layout passes do not postpone a stable transition indefinitely.
++        FoldReelsRefreshGate repeat = new FoldReelsRefreshGate();
++        repeat.observe(COMPACT, 0, true);
++        repeat.observe(WIDE, 100, true);
++        repeat.observe(WIDE, 200, true);
++        repeat.observe(WIDE, 500, true);
++        eq(true, repeat.ready(550, true, true, true));
++
++        System.out.println(checks + " policy/transition checks passed (no device validation).");
 +    }
 +}
 diff --git a/tests/fold-reels/check_mappings.py b/tests/fold-reels/check_mappings.py
 new file mode 100644
-index 0000000..5da05a6
+index 0000000..4e1ecc8
 --- /dev/null
 +++ b/tests/fold-reels/check_mappings.py
-@@ -0,0 +1,40 @@
+@@ -0,0 +1,42 @@
 +"""Validate every policy key against Piko's pinned Instagram mapping names."""
 +import json
 +import re
@@ -421,6 +834,8 @@ index 0000000..5da05a6
 +for locale in ("values", "values-fr-rFR"):
 +    resource = root / f"patches/src/main/resources/addresources/{locale}/instagram/strings.xml"
 +    names = [el.attrib["name"] for el in ET.parse(resource).getroot() if "name" in el.attrib]
-+    for suffix in ("title", "desc", "crop_title", "crop_desc"):
++    for suffix in ("title", "desc", "crop_title", "crop_desc", "inner_title", "inner_desc",
++                   "auto_title", "auto_desc", "menu_title", "inner_fit", "inner_crop",
++                   "refresh_now", "refresh_failed"):
 +        assert names.count("piko_fold_reels_" + suffix) == 1
 +print(f"{len(expected)} exact mapping keys and FR/EN XML resources checked.")
