@@ -1500,10 +1500,10 @@ index c638224..9d7d3bf 100644
              addPreference(
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
 new file mode 100644
-index 0000000..3ec286c
+index 0000000..7fea65e
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
-@@ -0,0 +1,217 @@
+@@ -0,0 +1,226 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1547,7 +1547,13 @@ index 0000000..3ec286c
 +    static String name(View view) { return view.getTag() instanceof String ? (String) view.getTag() : ""; }
 +    static RectF bounds(View view) { RectF rect = new RectF(); FoldReelsViews.bounds(view, rect, new Matrix()); return rect; }
 +    static void add(FrameLayout parent, View child, int x, int y, int w, int h) {
-+        parent.addView(child, new FrameLayout.LayoutParams(w, h)); child.layout(x, y, x + w, y + h);
++        // A later page layout must preserve measured player dimensions and its native gutters.
++        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(w, h);
++        params.leftMargin = x; params.topMargin = y;
++        parent.addView(child, params);
++        child.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
++                View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
++        child.layout(x, y, x + w, y + h);
 +    }
 +    @Before public void prepare() {
 +        activity = Robolectric.buildActivity(Activity.class).setup().visible().get();
@@ -1588,7 +1594,10 @@ index 0000000..3ec286c
 +        renderer.discover(viewer); RectF viewport = fullViewport();
 +        for (int step = 0; step <= 120; step++) {
 +            swipe(step * 1400f / 120); frame(viewport, true);
-+            for (TextureView video : videos) assertEquals(1000f / 788, video.getScaleX(), .001f);
++            for (TextureView video : videos) {
++                assertEquals(788, video.getWidth()); assertEquals(1400, video.getHeight());
++                assertEquals(1000f / 788, video.getScaleX(), .001f);
++            }
 +            RectF current = displayedClip(videos.get(1)), next = displayedClip(videos.get(2));
 +            assertEquals(current.bottom, next.top, 2.6f);
 +            assertEquals(viewport.top - Math.round(step * 1400f / 120) / 1400f * 1600, current.top, 1.4f);
