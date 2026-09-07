@@ -1,8 +1,16 @@
 diff --git a/extensions/instagram/build.gradle.kts b/extensions/instagram/build.gradle.kts
-index 5afc40d..2e74f9e 100644
+index 5afc40d..0aa90e4 100644
 --- a/extensions/instagram/build.gradle.kts
 +++ b/extensions/instagram/build.gradle.kts
-@@ -7,6 +7,8 @@ android {
+@@ -1,5 +1,7 @@
+ android {
+     namespace = "app.morphe.extension.instagram"
++    // AGP 9 only creates JVM tests for the tested build type.
++    testBuildType = "release"
+ 
+     defaultConfig {
+         minSdk = 26
+@@ -7,6 +9,8 @@ android {
  }
  
  dependencies {
