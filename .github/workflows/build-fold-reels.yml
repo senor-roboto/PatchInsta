@@ -49,7 +49,7 @@ jobs:
           mkdir -p tests/fold-reels/build
           javac -d tests/fold-reels/build \
             extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPolicy.java \
-            extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRefreshGate.java \
+            extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsGeometry.java \
             tests/fold-reels/FoldReelsPolicyTest.java
           java -cp tests/fold-reels/build FoldReelsPolicyTest
           python3 tests/fold-reels/check_mappings.py
@@ -71,7 +71,7 @@ jobs:
               raise SystemExit(f'Expected one .mpp; found {len(files)}')
           out = Path('output')
           out.mkdir()
-          dest = out / 'piko-fold-reels-v2.mpp'
+          dest = out / 'piko-fold-reels-v3.mpp'
           shutil.copy2(files[0], dest)
           digest = hashlib.sha256(dest.read_bytes()).hexdigest()
           (out / 'SHA256SUMS.txt').write_text(f'{digest}  {dest.name}\n')
@@ -82,7 +82,7 @@ jobs:
       - name: Downloadable bundle (no release is published)
         uses: actions/upload-artifact@v4
         with:
-          name: piko-fold-reels-v2
+          name: piko-fold-reels-v3
           path: output/
           if-no-files-found: error
           retention-days: 14
