@@ -1174,10 +1174,10 @@ index 0000000..f6713ac
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRenderer.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRenderer.java
 new file mode 100644
-index 0000000..78460d6
+index 0000000..46510db
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRenderer.java
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,193 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1315,6 +1315,9 @@ index 0000000..78460d6
 +            if (!Objects.equals(current, lastClip)) nativeClip = current;
 +        }
 +        void bounds(View v) {
++            // Resolve Android's implicit centre pivot after layout before reading it. A newly
++            // attached/re-sized player may not have had its render matrix evaluated yet.
++            v.getMatrix();
 +            source.set(0, 0, v.getWidth(), v.getHeight());
 +            if (v instanceof TextureView) {
 +                ((TextureView) v).getTransform(matrix); matrix.mapRect(source);
