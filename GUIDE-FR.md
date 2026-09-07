@@ -1,64 +1,72 @@
-# Piko — Réels adaptés au Fold, v3 expérimentale
+# Piko — Réels adaptés au Fold, v4 expérimentale
 
-Le fichier à importer dans Morphe est **`piko-fold-reels-v3.mpp`**. Le bundle contient Piko complet, avec notre modification non officielle. Il cible **Instagram 439.0.0.37.89, arm64-v8a, versionCode 384510827**, à partir de son **APKM original**. Base Piko 3.9.0, commit `50744aa07bb41c4e1f942a06614ef4e6f2e3610c`.
+Importer **`piko-fold-reels-v4.mpp`** dans Morphe. Ce bundle contient Piko complet, avec notre modification non officielle. Cible inchangée : **Instagram 439.0.0.37.89, arm64-v8a, versionCode 384510827**, à partir de son **APKM original**. Base : Piko 3.9.0 au commit `50744aa07bb41c4e1f942a06614ef4e6f2e3610c`.
 
-## Pourquoi cette révision
+## Ce que corrige la v4
 
-Les essais v2 montrent que demander le recadrage par les paramètres internes d’Instagram ne suffit pas : le lecteur peut garder sa disposition et ses limites de crop. La recréation ajoutée en v2 peut également changer de Réel. La v3 supprime ce mécanisme, y compris lorsque son ancien interrupteur était resté activé.
+Le retour sur la v3 signale un crop qui s’enclenche pendant l’arrivée du Réel suivant. Le code avait deux causes compatibles avec ce défaut : une passe toutes les 100 ms et la sélection d’une seule surface suffisamment visible.
 
-La v3 recherche la surface Android du lecteur de Réels connu de Piko, puis en change l’échelle et la position. Elle garde ses proportions, ne remplace pas le lecteur, ne change pas sa source et ne déclenche aucune navigation. Les réglages natifs de disposition restent stables entre les écrans pour éviter les bascules de paramètres mis en cache.
+La v4 conserve un état pour chaque surface vidéo rattachée au lecteur, y compris les vidéos adjacentes préchargées. Elle les cadre avant le dessin, sans seuil d’entrée dans l’écran. La recherche des vues se fait lors des changements de disposition ou de rattachement, avec une vérification de secours toutes les 400 ms pendant le rendu. La passe de transformation travaille à chaque image sur les surfaces déjà connues.
 
-## Commandes
+Chaque surface reçoit aussi une découpe correspondant à sa page. Quand la vidéo utilise la place libérée par la barre Instagram, l’espacement visuel des pages suit cette nouvelle hauteur : on ne laisse pas deux vidéos agrandies empiéter simplement sur le même espace. La position native du pager n’est pas modifiée.
 
-- **Bouton sur la vidéo** : un toucher sur **Remplir** agrandit la vidéo ; **Entière** restaure sa présentation native. Le libellé indique l’action proposée. Cela remet aussi le zoom supplémentaire à 100 %.
-- **Appui long sur ce bouton** : ouvre **Cadrage Fold**, avec le zoom de 100 à 250 %, les options et le diagnostic. Le même menu reste accessible par **⋯ → Cadrage Fold**.
-- **Profils indépendants** : le choix de cadrage et le zoom sont mémorisés séparément pour les écrans externe et interne. Le menu indique le profil qu’il modifie.
+La colonne d’actions est recherchée comme un groupe vertical contenant plusieurs catégories distinctes, dont les commentaires. C’est le groupe complet qui est déplacé. Un traitement tactile dans le lecteur maintient l’accès aux boutons lorsqu’ils dépassent leur ancien conteneur ; un glissement commencé sur un bouton annule son clic et rend le geste au pager. Les panneaux natifs gardent la priorité. Le placement peut être désactivé.
+
+Les flags MobileConfig restent stables comme en v3. **Aucun rechargement automatique au pliage, au swipe ou au changement de cadrage.** L’ancien interrupteur v2 n’est plus utilisé.
+
+## Profils et réglages
 
 | Réglage initial | Écran externe | Écran interne |
 | --- | --- | --- |
-| Cadrage | Remplissage par agrandissement uniforme | Présentation native, vidéo entière |
+| Vidéo | Remplissage/crop | Présentation native entière |
 | Barres Android | Masquées pendant les Réels | Conservées |
-| Commandes Instagram | Conservées ; mode allégé en option | Conservées |
-| Pliage, rotation, changement de cadrage | Aucun rechargement demandé par le patch | Aucun rechargement demandé par le patch |
+| Navigation Instagram | Masquée si reconnue | Conservée |
+| Colonne d’actions | Proche du bord, cible 7 dp | Proche du bord, cible 14 dp |
+| Like, commentaire, partage, sauvegarde | Conservés | Conservés |
+| Mode minimal | Désactivé | Non appliqué |
 
-**Commandes allégées sur écran externe** masque les boutons reconnus sans masquer volontairement les commentaires. La barre Instagram est également masquée si son identité et sa position correspondent ; sa zone peut alors être utilisée par la vidéo. Les boutons non reconnus restent présents. Ce mode est désactivé par défaut : l’activer depuis l’appui long pour essayer le plein écran plus dégagé, et le désactiver pour retrouver les commandes.
+La navigation Instagram et les actions du Réel ont désormais **deux réglages indépendants**. On peut gagner la hauteur des onglets sans retirer les boutons du Réel. La navigation est masquée avec `INVISIBLE`, pour éviter une remise en page provoquée par `GONE`.
 
-Les barres système peuvent être révélées par un balayage depuis un bord. Elles sont restaurées en quittant les Réels, en passant sur le grand écran ou pendant la saisie. L’option se désactive également depuis le menu.
+- Toucher **Remplir** ou **Entière**, sur le lecteur, pour basculer immédiatement. Le libellé indique l’action proposée. Cela remet le zoom supplémentaire à 100 %.
+- Faire un **appui long** sur ce bouton pour ouvrir **Cadrage Fold** : zoom, barres Android, navigation Instagram, placement des actions et mode minimal. Le même menu reste accessible par **⋯ → Cadrage Fold**.
+- Le cadrage et le zoom sont mémorisés séparément pour les deux écrans. Les préférences v3 existantes sont conservées.
+- **Commandes allégées** reste une option pour retirer les actions reconnues. Les commentaires et leurs parents sont protégés ; des boutons non reconnus peuvent rester visibles.
+- Désactiver **Rapprocher les actions du bord** pour restaurer leur placement natif. Le déplacement reste limité à la zone tactile du lecteur ; les 7/14 dp sont une cible, pas une promesse sur toutes les variantes Instagram.
 
-Le cadrage prend effet au prochain passage de rendu, sans attendre un nouveau Réel. Le zoom manuel peut aider lorsque des bandes font partie des pixels de la vidéo, au prix d’une coupe plus importante. Le mode Entière remet les transformations du patch à leur état précédent.
+Un balayage depuis un bord peut révéler les barres système. Elles reviennent hors des Réels et pendant la saisie. **Recharger le lecteur…** reste un dépannage manuel avec une seconde confirmation, car il peut changer le Réel. Le cadrage courant n’en dépend pas.
 
-## Installer la mise à jour avec Morphe
+## Installer dans Morphe
 
-1. Se connecter à GitHub, ouvrir [les compilations de PatchInsta](https://github.com/senor-roboto/PatchInsta/actions/workflows/build-fold-reels.yml), puis la dernière compilation réussie de la **v3**.
-2. Dans **Artifacts**, télécharger **piko-fold-reels-v3**, décompresser le ZIP et récupérer `piko-fold-reels-v3.mpp`. Le fichier `.patch` du dépôt contient les sources et ne s’importe pas dans Morphe.
-3. Ouvrir le `.mpp` avec Morphe pour ajouter la source **Piko + Adaptive Fold Reels v3 (unofficial)**.
-4. Repartir de l’APKM original **439.0.0.37.89 / arm64**, puis sélectionner **uniquement cette source v3** pour l’opération. Désélectionner les sources Piko officielle, Fold v1 et Fold v2 : leurs patches seraient appliqués en doublon.
-5. Cocher **Adaptive Fold Reels (experimental)**, décoché par défaut, et conserver sa dépendance **Add settings**. Choisir les autres patches Piko habituels.
-6. Pour mettre à jour ton clone existant, conserver **le même package Clone et la même clé de signature Morphe**. Patcher puis installer le résultat. Il n’est pas nécessaire de désinstaller le clone auparavant.
-7. Ouvrir Instagram, puis un Réel. Si nécessaire, vérifier **réglages Piko → Divers → Réels adaptés au Fold**. Le réglage obsolète d’actualisation automatique de v2 a été retiré.
+1. Se connecter à GitHub et ouvrir la dernière [compilation réussie de PatchInsta](https://github.com/senor-roboto/PatchInsta/actions/workflows/build-fold-reels.yml) correspondant à la v4.
+2. Dans **Artifacts**, télécharger **piko-fold-reels-v4**, décompresser le ZIP et récupérer `piko-fold-reels-v4.mpp`. Le `.patch` du dépôt contient les sources, pas le fichier à importer dans Morphe.
+3. Ouvrir le `.mpp` avec Morphe pour ajouter **Piko + Adaptive Fold Reels v4 (unofficial)**.
+4. Repartir de l’APKM original **439.0.0.37.89 / arm64**. Pour cette opération, sélectionner les patches de **la source v4 uniquement** ; désélectionner Piko officiel et les anciennes sources Fold pour éviter les doublons.
+5. Cocher **Adaptive Fold Reels (experimental)**, décoché par défaut, avec **Add settings** et les autres patches Piko habituels.
+6. Conserver **le même package Clone et la même clé de signature Morphe** pour mettre à jour le clone installé. Patcher puis installer le résultat ; ne pas désinstaller le clone auparavant.
+7. Ouvrir un Réel et essayer le nouveau comportement. Les options sont aussi disponibles dans **Piko → Divers**.
 
-Le bundle contient aussi `SHA256SUMS.txt`, le présent guide, `LICENSE` et `NOTICE`. Les artefacts GitHub expirent après 14 jours ; **Run workflow** permet de les reconstruire.
+Le ZIP contient le bundle, `SHA256SUMS.txt`, ce guide, `LICENSE` et `NOTICE`. Les artefacts GitHub expirent après 14 jours ; **Run workflow** permet de les reconstruire.
 
-## Test utile sur le Fold
+## Vérification
 
-Lire un Réel reconnaissable sur l’écran externe, ouvrir le téléphone sans tourner, toucher **Remplir**, puis **Entière**, et refermer. Vérifier que le patch ne fait plus passer au Réel suivant. Tester aussi un balayage vers le Réel suivant, la rotation et l’ouverture des commentaires avec le clavier.
+Les contrôles JVM exécutent **253 assertions** de géométrie et de profil, dont le raccord entre pages pendant un swipe avec un viewport agrandi. Les **13 clés natives** restent vérifiées contre les mappings Piko, ainsi que les ressources françaises et anglaises.
 
-Tester ensuite les **Commandes allégées**. Vérifier quelles commandes disparaissent, que les commentaires restent accessibles, et que la désactivation remet la navigation Instagram. Le contrôle de cadrage doit rester accessible.
+Le workflow ajoute **14 scénarios de vues Android avec Robolectric** : voisins cadrés avant affichage, 121 étapes de swipe sans nouvelle découverte, stabilité des transformations, première disposition d’une nouvelle surface, détachement, restauration, changement de viewport, colonne entière, clic déplacé, passage du bouton au pager, priorité d’un panneau natif, annulation d’un appui, partage du clipping et indépendance des options. Leur réussite et la compilation du `.mpp` doivent être confirmées par le statut GitHub Actions de la révision téléchargée.
 
-## Limites et diagnostic
+**Ces tests ne décodent pas de vidéos Instagram et ne valident pas le compositeur graphique Samsung.** L’APKM exact n’étant pas présent ici, l’injection du nouveau point d’entrée tactile doit aussi être confirmée au patching. La compilation ne constitue pas une garantie de fluidité ou de compatibilité visuelle sur l’appareil.
 
-Les calculs de géométrie et de profil sont vérifiés par **128 assertions JVM**, et **13 clés natives** sont contrôlées contre les mappings Piko. Le XML français et anglais est vérifié. Le résultat de la compilation Android est visible dans GitHub Actions. **Ces contrôles ne remplacent pas le patching de l’APKM ni le test du rendu sur ton Fold.**
+## Essai sur le Fold et diagnostic
 
-La surface est détectée au moment de la lecture, parmi les `TextureView` et `SurfaceView` du lecteur identifié. Aucun APKM n’était disponible pour analyser toutes les variantes Instagram. Une vidéo rendue autrement, une bande intégrée au fichier ou un panneau opaque différent peut encore limiter le résultat. Le mode Entière conserve la présentation native : il ne peut pas récupérer des pixels déjà coupés à la source. La transformation est prise en charge à partir d’Android 10 ; ton Android 17 entre dans cette plage.
+Sur écran externe, faire quelques swipes lents, puis rapides. Le Réel entrant doit arriver déjà cadré. Vérifier ensuite le commentaire, le like et le partage ; commencer aussi un swipe depuis un bouton. Désactiver puis réactiver **Masquer la navigation Instagram** en laissant le mode minimal désactivé.
 
-Si **Cadrage ?** apparaît, toucher le bouton pour ouvrir les options. Si le crop ou une commande échoue, utiliser **Cadrage Fold → Diagnostic du lecteur → Copier**, puis joindre le texte et une capture de l’écran concerné. Le rapport contient des classes de vues, identifiants de ressources et dimensions ; il ne copie ni légendes, ni identifiants de Réels, ni données de compte. Il n’est envoyé nulle part automatiquement.
+Ouvrir le téléphone sur un Réel en cours, tester **Remplir → Entière**, puis refermer. Le patch ne doit ni passer au Réel suivant ni demander une actualisation. Android ou Instagram peuvent encore reconstruire eux-mêmes l’écran lors d’un changement de configuration.
 
-La détection automatique combine taille et proportions de la fenêtre. Si elle se trompe avec le zoom d’affichage ou le partage d’écran, **Détection des écrans** permet de forcer un profil pour vérifier le comportement. Revenir sur **Automatique** pour reprendre le changement de profil au pliage.
+Si une variante du lecteur résiste, ouvrir **Cadrage Fold → Diagnostic du lecteur → Copier**, puis joindre ce texte et une courte capture vidéo. Le rapport indique les surfaces trouvées, les passes de recherche/rendu, les colonnes reconnues et la géométrie. Il n’inclut ni légendes, ni identifiants de Réels, ni données de compte, et n’est jamais envoyé automatiquement.
 
-**Recharger le lecteur…** est uniquement un dépannage manuel avec une seconde confirmation indiquant qu’il peut changer le Réel. Le nouveau cadrage ne nécessite pas ce bouton. Le patch ne demande plus de recréation automatique ; Android ou Instagram peuvent néanmoins reconstruire eux-mêmes l’écran lors d’un changement de configuration.
+**Cadrage ?** indique qu’aucune surface utilisable n’a été cadrée. Les petites surfaces et les lecteurs sans page identifiable sont laissés à Instagram. Les bandes intégrées aux pixels peuvent nécessiter le zoom manuel. Si la détection des écrans se trompe avec le zoom d’affichage ou le partage d’écran, utiliser temporairement **Détection des écrans**, puis revenir sur **Automatique**.
 
-## Sources techniques et licence
+## Sources et licence
 
-Le rendu s’appuie sur les propriétés de transformation des vues Android. La documentation distingue la [transformation interne d’une TextureView](https://developer.android.com/reference/android/view/TextureView#setTransform(android.graphics.Matrix)) de la taille de la vue, et décrit la synchronisation des [transformations de SurfaceView](https://developer.android.com/reference/android/view/SurfaceView). Le code modifie la vue de rendu et restaure ses propriétés ; il ne substitue ni surface ni moteur de lecture.
+Le rendu utilise les transformations et le clipping des vues Android ; le comportement matériel des surfaces distinctes reste dépendant de la plateforme. Voir l’implémentation officielle de [SurfaceView](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/java/android/view/SurfaceView.java) et la documentation de [TextureView](https://developer.android.com/reference/android/view/TextureView). Les tests de vues utilisent [Robolectric 4.14.1](https://github.com/robolectric/robolectric/tree/robolectric-4.14.1).
 
-Dérivé non officiel de [Piko](https://github.com/crimera/piko), GPL-3.0-or-later. Les mentions et licences amont sont conservées. Aucune affiliation avec Piko, Morphe, Instagram ou Samsung. Aucun APK Instagram n’est distribué.
+Dérivé non officiel de [Piko](https://github.com/crimera/piko), GPL-3.0-or-later. Licences et mentions amont conservées. Aucune affiliation avec Piko, Morphe, Instagram ou Samsung. Aucun APK Instagram n’est distribué.

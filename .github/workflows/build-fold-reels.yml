@@ -58,7 +58,21 @@ jobs:
         working-directory: upstream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew buildAndroid --no-daemon --console=plain
+        run: ./gradlew :extensions:instagram:testReleaseUnitTest buildAndroid --no-daemon --console=plain
+
+      - name: Summarize Android view regression tests
+        run: |
+          python3 - <<'PYTEST'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          reports = list(Path('upstream/extensions/instagram/build/test-results/testReleaseUnitTest').glob('TEST-*FoldReelsRuntimeTest.xml'))
+          if len(reports) != 1:
+              raise SystemExit('Expected Fold Reels Android regression report')
+          suite = ET.parse(reports[0]).getroot()
+          print('Fold Reels Android view scenarios:', suite.attrib)
+          if int(suite.attrib['failures']) or int(suite.attrib['errors']) or int(suite.attrib['skipped']):
+              raise SystemExit('Android regression scenarios did not all pass')
+          PYTEST
 
       - name: Prepare the experimental bundle
         run: |
@@ -71,7 +85,7 @@ jobs:
               raise SystemExit(f'Expected one .mpp; found {len(files)}')
           out = Path('output')
           out.mkdir()
-          dest = out / 'piko-fold-reels-v3.mpp'
+          dest = out / 'piko-fold-reels-v4.mpp'
           shutil.copy2(files[0], dest)
           digest = hashlib.sha256(dest.read_bytes()).hexdigest()
           (out / 'SHA256SUMS.txt').write_text(f'{digest}  {dest.name}\n')
@@ -82,7 +96,7 @@ jobs:
       - name: Downloadable bundle (no release is published)
         uses: actions/upload-artifact@v4
         with:
-          name: piko-fold-reels-v3
+          name: piko-fold-reels-v4
           path: output/
           if-no-files-found: error
           retention-days: 14
