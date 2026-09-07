@@ -1,6 +1,6 @@
 # Piko — Réels adaptés au Fold, prototype expérimental
 
-**Ce kit contient un patch source et un workflow de compilation, pas un fichier `.mpp` déjà installable.** La compilation Android et le rendu sur un Galaxy Z Fold8 ne sont pas validés. Ne pas renommer le fichier `.patch` en `.mpp`.
+**Le fichier à utiliser dans Morphe est `piko-fold-reels-experimental.mpp`, produit par GitHub Actions dans PatchInsta.** Télécharger uniquement le résultat de la dernière compilation réussie. Le rendu sur le Galaxy Z Fold8 reste à valider.
 
 Le code est une modification non officielle de [Piko](https://github.com/crimera/piko), basée exactement sur le commit `50744aa07bb41c4e1f942a06614ef4e6f2e3610c`, version Piko 3.9.0. La cible héritée est **Instagram 439.0.0.37.89, arm64-v8a, versionCode 384510827**, au format APKM original. Les identifiants internes ont été vérifiés dans les sources de cette révision ; leur effet visuel reste à confirmer sur l’application.
 
@@ -17,19 +17,18 @@ Le choix dépend de la **fenêtre courante**, et non du nom du téléphone. Un �
 
 Cette approche conserve le lecteur, les boutons, les zones tactiles et les gestes natifs. Elle évite d’agrandir l’ensemble de l’interface avec la vidéo. Elle ne garantit cependant **ni un plein écran sans aucune bande noire, ni le déplacement des boutons dans les bandes noires** : les seuils numériques du moteur Instagram restent en place. Une bande intégrée aux pixels de la vidéo ne sera pas détectée. Le mode grand écran ne reconstruit pas une image déjà recadrée par un autre traitement Instagram. Les effets attendus des options natives sont déduits de leurs noms dans les mappings Piko ; ce ne sont pas des observations sur appareil.
 
-## 1. Produire le fichier `.mpp` avec GitHub
+## 1. Récupérer le fichier `.mpp`
 
-Cette procédure nécessite un compte GitHub. Le workflow compile les patches ; aucun identifiant Instagram et aucun APKM ne sont nécessaires à cette étape.
+Le dépôt [PatchInsta](https://github.com/senor-roboto/PatchInsta) contient déjà les sources et le workflow. Il est privé : se connecter au compte GitHub qui en est propriétaire.
 
-1. Décompresser le kit et créer un dépôt GitHub vide, par exemple `piko-fold-reels`.
-2. Déposer à la racine du dépôt les fichiers `piko-fold-reels.patch`, `GUIDE-FR.md`, `LICENSE` et `NOTICE`.
-3. Ajouter le workflow fourni au chemin exact `.github/workflows/build-fold-reels.yml`. Si le dossier caché n’apparaît pas dans le sélecteur, utiliser **Add file → Create new file**, saisir ce chemin et coller le contenu du fichier fourni.
-4. Dans **Actions**, choisir **Build experimental Fold Reels**, puis **Run workflow**. Le fichier doit se trouver sur la branche par défaut.
-5. Après une exécution réussie, ouvrir l’exécution, télécharger l’artefact **piko-fold-reels-experimental**, puis le décompresser. Il doit contenir `piko-fold-reels-experimental.mpp` et `SHA256SUMS.txt`.
+1. Ouvrir [GitHub Actions](https://github.com/senor-roboto/PatchInsta/actions/workflows/build-fold-reels.yml).
+2. Choisir la dernière compilation **réussie** correspondant au patch actuel.
+3. Dans **Artifacts**, télécharger **piko-fold-reels-experimental**, puis décompresser le ZIP.
+4. Récupérer `piko-fold-reels-experimental.mpp`. Le fichier `.patch` du dépôt contient les sources et ne doit pas être importé dans Morphe.
 
-Le workflow récupère la révision Piko fixée ci-dessus, applique le diff après vérification, lance les tests, puis utilise `./gradlew buildAndroid`. C’est la tâche indiquée par le [modèle officiel de patches Morphe](https://github.com/MorpheApp/morphe-patches-template). L’exécution ne publie pas de release. Les artefacts sont conservés 14 jours ; télécharger le résultat avant leur expiration.
+Le workflow se lance lors des changements du patch sur `main`. Pour reconstruire manuellement, choisir **Run workflow**. Aucun identifiant Instagram et aucun APKM ne sont nécessaires à la compilation des patches.
 
-Le jeton automatique `GITHUB_TOKEN` est utilisé pour les dépendances GitHub Packages, comme dans la configuration Piko. Aucun secret à coller dans le code. Une politique d’organisation, un refus d’accès à une dépendance ou une incompatibilité de la chaîne de compilation peuvent bloquer le workflow ; dans ce cas, conserver le journal d’erreur. Ce workflow a été préparé et contrôlé statiquement, mais n’a pas été exécuté ici.
+La compilation récupère une révision Piko fixe et exécute `./gradlew buildAndroid`, la tâche indiquée par le [modèle officiel Morphe](https://github.com/MorpheApp/morphe-patches-template). Les artefacts sont conservés 14 jours. Si un artefact a expiré, relancer le workflow. Le fichier `SHA256SUMS.txt` permet de vérifier le téléchargement.
 
 ## 2. Installer avec Morphe sur le Fold
 
@@ -58,7 +57,7 @@ Pour revenir en arrière, désactiver le premier interrupteur puis redémarrer. 
 
 ## Validation et prochaine étape
 
-Vérifié ici : compilation JVM de la politique de sélection ; **33 assertions réussies** ; correspondance des **15 clés exactes** avec les mappings Piko ; validité XML des libellés français et anglais ; contrôle du diff source. Le téléchargement de Gradle est inaccessible depuis cet environnement, donc **aucune compilation `.mpp`, application sur APKM, installation ou validation visuelle n’a été effectuée**.
+Vérifié ici : compilation JVM de la politique de sélection ; **33 assertions réussies** ; correspondance des **15 clés exactes** avec les mappings Piko ; validité XML des libellés français et anglais ; contrôle du diff source. La compilation Android se fait dans GitHub Actions : son statut fait foi pour chaque révision. **Une compilation réussie ne valide pas encore le patching de ton APKM ni le rendu sur appareil.**
 
 Pour valider sur appareil : lire le même Réel vertical sur les deux écrans, ouvrir les commentaires, plier/déplier pendant la lecture, faire pivoter le téléphone puis essayer le partage d’écran. Vérifier le cadrage, les sous-titres, les boutons, la barre de navigation et le défilement.
 
