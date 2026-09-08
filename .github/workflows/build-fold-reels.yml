@@ -66,7 +66,7 @@ jobs:
           from pathlib import Path
           import xml.etree.ElementTree as ET
           reports = list(Path('upstream/extensions/instagram/build/test-results/testReleaseUnitTest').glob('TEST-*FoldReels*Test.xml'))
-          if len(reports) != 4:
+          if len(reports) != 5:
               raise SystemExit('Expected Fold Reels Android regression report')
           for report in reports:
               suite = ET.parse(report).getroot()
