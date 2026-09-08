@@ -65,12 +65,13 @@ jobs:
           python3 - <<'PYTEST'
           from pathlib import Path
           import xml.etree.ElementTree as ET
-          reports = list(Path('upstream/extensions/instagram/build/test-results/testReleaseUnitTest').glob('TEST-*FoldReelsRuntimeTest.xml'))
-          if len(reports) != 1:
+          reports = list(Path('upstream/extensions/instagram/build/test-results/testReleaseUnitTest').glob('TEST-*FoldReels*Test.xml'))
+          if len(reports) != 4:
               raise SystemExit('Expected Fold Reels Android regression report')
-          suite = ET.parse(reports[0]).getroot()
-          print('Fold Reels Android view scenarios:', suite.attrib)
-          if int(suite.attrib['failures']) or int(suite.attrib['errors']) or int(suite.attrib['skipped']):
-              raise SystemExit('Android regression scenarios did not all pass')
+          for report in reports:
+              suite = ET.parse(report).getroot()
+              print('Fold Reels Android view scenarios:', suite.attrib)
+              if int(suite.attrib['failures']) or int(suite.attrib['errors']) or int(suite.attrib['skipped']):
+                  raise SystemExit('Android regression scenarios did not all pass')
           PYTEST
 
