@@ -690,10 +690,10 @@ index 0000000..625afd8
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsCardChrome.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsCardChrome.java
 new file mode 100644
-index 0000000..9f5c3b0
+index 0000000..e1d3f01
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsCardChrome.java
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,109 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -740,12 +740,21 @@ index 0000000..9f5c3b0
 +        if (drawable instanceof GradientDrawable) {
 +            GradientDrawable gradient = (GradientDrawable) drawable;
 +            if (gradient.getShape() != GradientDrawable.RECTANGLE) return false;
++            // Contrast gradients are useful chrome, including rounded ones. A mixed drawable
++            // needs device evidence before separating its border from its scrim.
++            if (gradient.getColors() != null && gradient.getColors().length > 1) return false;
 +            if (gradient.getCornerRadius() > 0) return true;
 +            float[] radii = gradient.getCornerRadii();
 +            if (radii != null) for (float radius : radii) if (radius > 0) return true;
 +        } else if (drawable instanceof LayerDrawable) {
 +            LayerDrawable layers = (LayerDrawable) drawable;
-+            for (int i = 0; i < layers.getNumberOfLayers(); i++) if (rounded(layers.getDrawable(i), depth + 1)) return true;
++            boolean decoration = false;
++            for (int i = 0; i < layers.getNumberOfLayers(); i++) {
++                Drawable layer = layers.getDrawable(i); if (layer == null) continue;
++                if (!rounded(layer, depth + 1)) return false;
++                decoration = true;
++            }
++            return decoration;
 +        } else if (drawable instanceof StateListDrawable) {
 +            // Only inspect the public current state; never reflect into Instagram's drawables.
 +            return rounded(drawable.getCurrent(), depth + 1);
@@ -2314,10 +2323,10 @@ index c638224..ec2c587 100644
              addPreference(
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java
 new file mode 100644
-index 0000000..6ca4be4
+index 0000000..c446096
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,136 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.app.Activity;
@@ -2432,8 +2441,9 @@ index 0000000..6ca4be4
 +    }
 +    @Test public void uncertainScrimFailureDoesNotDisableThePlayerOrShortcut() {
 +        FoldReels.Watcher.Tracker t=start();
-+        View faulty=new View(activity) { @Override public android.graphics.drawable.Drawable getBackground() { throw new IllegalStateException("synthetic decorative failure"); } };
-+        FoldReelsTestFixture.add(viewer,faulty,0,0,400,100); t.onGlobalLayout(); t.onPreDraw();
++        boolean[] armed={false};
++        View faulty=new View(activity) { @Override public android.graphics.drawable.Drawable getBackground() { if(armed[0])throw new IllegalStateException("synthetic decorative failure");return super.getBackground(); } };
++        FoldReelsTestFixture.add(viewer,faulty,0,0,400,100); armed[0]=true; t.onGlobalLayout(); t.onPreDraw(); armed[0]=false;
 +        assertTrue(state(t),t.failures.containsKey("scrim")); assertFalse(t.failures.containsKey("renderer")); assertFalse(t.failures.containsKey("core"));
 +        assertTrue(state(t),t.active); assertNotNull(t.chip.get()); assertTrue(video.getScaleX()>1); assertEquals(0,activity.recreations);
 +    }
@@ -2500,10 +2510,10 @@ index 0000000..d531e35
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPresentationTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPresentationTest.java
 new file mode 100644
-index 0000000..bfc8df6
+index 0000000..067b0d3
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPresentationTest.java
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,209 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Color;
@@ -2609,6 +2619,12 @@ index 0000000..bfc8df6
 +        ((FrameLayout) wrapper.getParent()).removeView(wrapper); assertSame(bg, wrapper.getBackground());
 +        add(pages.get(1), wrapper, 106,0,788,1400); renderer.discover(viewer); card.discover(renderer, viewer); card.frame(true);
 +        ColorDrawable replacement = new ColorDrawable(Color.RED); wrapper.setBackground(replacement); card.frame(true); card.restore(); assertSame(replacement, wrapper.getBackground());
++    }
++    @Test public void mixedCardDecorationCannotRemoveTheContrastGradient() {
++        FrameLayout wrapper=decoratedWrapper(); GradientDrawable gradient=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xAA000000,Color.TRANSPARENT});
++        android.graphics.drawable.LayerDrawable mixed=new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{rounded(),gradient});
++        wrapper.setBackground(mixed); renderer.discover(viewer); card.discover(renderer,viewer); card.frame(true);
++        assertSame(mixed,wrapper.getBackground()); assertNull(wrapper.getForeground());
 +    }
 +    void nativeMetadata() {
 +        FrameLayout narrow = new FrameLayout(activity); add(pages.get(1), narrow, 106, 0, 788, 1400);

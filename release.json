@@ -1,0 +1,7 @@
+{
+  "version": "4.1.0",
+  "name": "PatchInsta (Piko, unofficial)",
+  "repository": "senor-roboto/PatchInsta",
+  "upstream_repository": "crimera/piko",
+  "upstream_commit": "50744aa07bb41c4e1f942a06614ef4e6f2e3610c"
+}

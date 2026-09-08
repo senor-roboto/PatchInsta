@@ -1,12 +1,18 @@
-name: Build experimental Fold Reels
+name: Build, verify and release PatchInsta
 
 on:
   push:
     branches: [main]
     paths:
       - piko-fold-reels.patch
+      - release.json
+      - scripts/**
       - .github/workflows/build-fold-reels.yml
   workflow_dispatch:
+
+concurrency:
+  group: patchinsta-release-main
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -21,7 +27,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-
       - name: Read pinned upstream Piko sources
         uses: actions/checkout@v4
         with:
@@ -29,61 +34,80 @@ jobs:
           ref: 50744aa07bb41c4e1f942a06614ef4e6f2e3610c
           path: upstream
           persist-credentials: false
-
       - name: Apply the reviewed source patch
-        working-directory: upstream
         run: |
-          git apply --check ../piko-fold-reels.patch
-          git apply ../piko-fold-reels.patch
-          git diff --check
-
+          python3 - <<'PY'
+          import json, subprocess
+          config=json.load(open('release.json'))
+          actual=subprocess.check_output(['git','-C','upstream','rev-parse','HEAD'],text=True).strip()
+          assert actual == config['upstream_commit'], 'Upstream pin mismatch'
+          PY
+          git -C upstream apply --check ../piko-fold-reels.patch
+          git -C upstream apply ../piko-fold-reels.patch
+          git -C upstream diff --check
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Check policy and mappings
-        working-directory: upstream
+      - name: Check policy, mappings and distribution guards
         run: |
-          mkdir -p tests/fold-reels/build
-          javac -d tests/fold-reels/build \
-            extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPolicy.java \
-            extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsGeometry.java \
-            tests/fold-reels/FoldReelsPolicyTest.java
-          java -cp tests/fold-reels/build FoldReelsPolicyTest
-          python3 tests/fold-reels/check_mappings.py
-
-      - name: Compile the Android patch bundle
+          mkdir -p upstream/tests/fold-reels/build
+          javac -d upstream/tests/fold-reels/build \
+            upstream/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPolicy.java \
+            upstream/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsGeometry.java \
+            upstream/tests/fold-reels/FoldReelsPolicyTest.java
+          java -cp upstream/tests/fold-reels/build FoldReelsPolicyTest
+          python3 upstream/tests/fold-reels/check_mappings.py
+          python3 -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Run Android scenarios, compile MPP and load it with Morphe
         working-directory: upstream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew :extensions:instagram:testReleaseUnitTest :patches:verifyFoldBundle --no-daemon --console=plain
+      - name: Check every test report, bundle identity, ZIP and SHA-256
+        run: python3 scripts/bundle.py
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-${{ github.sha }}
+          path: |
+            upstream/extensions/instagram/build/test-results/testReleaseUnitTest/
+            upstream/extensions/instagram/build/reports/tests/testReleaseUnitTest/
+            output/test-results.json
+          retention-days: 14
+      - name: Transfer verified release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: PatchInsta-${{ github.sha }}
+          path: output/
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: Summarize Android view regression tests
-        run: |
-          python3 - <<'PYTEST'
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-          reports = list(Path('upstream/extensions/instagram/build/test-results/testReleaseUnitTest').glob('TEST-*FoldReels*Test.xml'))
-          if len(reports) != 5:
-              raise SystemExit('Expected Fold Reels Android regression report')
-          for report in reports:
-              suite = ET.parse(report).getroot()
-              print('Fold Reels Android view scenarios:', suite.attrib)
-              if int(suite.attrib['failures']) or int(suite.attrib['errors']) or int(suite.attrib['skipped']):
-                  raise SystemExit('Android regression scenarios did not all pass')
-          PYTEST
-
-
-      - name: Inspect compiled bundle
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          from zipfile import ZipFile
-          bundle = list(Path('upstream/patches/build/libs').glob('*.mpp'))
-          assert len(bundle) == 1
-          with ZipFile(bundle[0]) as z:
-              print(z.read('META-INF/MANIFEST.MF').decode())
-              print([n for n in z.namelist() if n.endswith(('.rve','.dex'))])
-          PY
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: PatchInsta-${{ github.sha }}
+          path: output
+      - name: Publish durable assets, verify downloads and update Morphe feed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/publish.py
+      - name: Record publication and public accessibility
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: publication-${{ github.sha }}
+          path: publication-result.json
+          retention-days: 14
