@@ -1,4 +1,4 @@
-# PatchInsta 4.1.0 — installation et utilisation
+# PatchInsta 4.1.1 — installation et utilisation
 
 Bundle non officiel basé sur Piko 3.9.0 au commit `50744aa07bb41c4e1f942a06614ef4e6f2e3610c`. Cible inchangée : Instagram **439.0.0.37.89 / arm64-v8a / 384510827**, à partir de l’**APKM original non patché**.
 
@@ -12,7 +12,7 @@ https://github.com/senor-roboto/PatchInsta
 
 Ou ouvrir sur le téléphone [Ajouter PatchInsta à Morphe](https://morphe.software/add-source?github=senor-roboto%2FPatchInsta). Le lien `morphe.software/add-source` s’ouvre dans le navigateur ; dans le champ d’ajout manuel du gestionnaire, utiliser l’URL GitHub ci-dessus. Le [JSON direct](https://raw.githubusercontent.com/senor-roboto/PatchInsta/main/patches-bundle.json) est l’autre URL de source reconnue.
 
-La source a besoin d’un dépôt **public**. Si le dépôt est encore privé, Morphe ne peut pas en télécharger le JSON et le bundle sans authentification. La Release reste téléchargeable après connexion à GitHub, mais son import local ne fournit pas les futures mises à jour distantes.
+Le dépôt est public. Les utilisateurs ayant déjà ajouté cette source passent directement à « Mettre à jour ensuite » ; ne pas la supprimer ni réimporter un fichier local.
 
 La nouvelle source s’appelle **PatchInsta (Piko, unofficial)**. Pour le premier passage depuis les bundles locaux v3/v4, recopier sa sélection de patchs Instagram vers cette source. Pour cette opération, sélectionner uniquement PatchInsta : elle comprend Piko, et les deux sources appliquées ensemble créeraient des doublons. Les anciennes sources ne sont plus nécessaires pour cet Instagram.
 
@@ -38,7 +38,7 @@ Sur l’écran interne, la vidéo entière, les actions et les métadonnées com
 
 Les anciens choix explicitement enregistrés sont conservés. En particulier, l’ancien mode minimal activé devient **Commentaire seul** ; désactivé explicitement, il devient **Toutes**. Choisir **Plein écran propre** une fois pour appliquer l’ensemble des nouveaux défauts cover.
 
-Les vues natives de l’avatar, du nom et de Suivre sont réutilisées. La largeur est calculée à partir du rail commentaire, la caption occupe une ligne avec ellipsis. Le bloc reste dans la zone tactile du viewer : si celle-ci ne rejoint pas le bas physique de l’écran, un retrait inférieur peut rester. Le dégradé supérieur identifié est étendu au vrai bord du viewport sans déplacer les boutons du header. Une forme composite ou inconnue reste intacte pour préserver le contraste et les interactions.
+Les vues natives de l’avatar, du nom et de Suivre sont réutilisées. La largeur est calculée à partir du rail commentaire, une caption TextView occupe une ligne avec ellipsis. Une caption dessinée par une vue native spécialisée est limitée à une ligne visible, sans copier son texte ; son comportement d’ouverture reste natif. Le bloc reste dans la zone tactile du viewer : si celle-ci ne rejoint pas le bas physique de l’écran, un retrait inférieur peut rester. Le bandeau supérieur partagé reconnu est maintenu dans le viewport pendant les swipes, et le raccourci se place en dessous pour éviter les amis. Le dégradé identifié est étendu au vrai bord, même lorsqu’il est le background du bandeau : seuls ses pixels sont étendus. Les couches de bordure inspectables sont séparées du dégradé. Les décorations non reconnues restent natives.
 
 ## Options avancées
 
@@ -64,12 +64,12 @@ Tester ensuite quelques swipes lents puis rapides ; ouvrir les commentaires, les
 
 Vérifier sur cover le dégradé jusqu’au bord supérieur, la caption sur une ligne, l’espace réservé au commentaire et l’absence de rectangle résiduel. Sur inner, vérifier le retour du décor et des métadonnées natives. Désactiver/réactiver les options pour vérifier la restauration.
 
-En cas de défaut, ouvrir **Cadrage Fold → Options avancées → Diagnostic du lecteur → Copier**. Joindre ce texte et une capture courte. Le rapport inclut lifecycle, fenêtre, viewport, surfaces, rails, branches cachées, décor, scrim, largeur des métadonnées et raisons de repli. Il exclut textes, captions, usernames, identifiants de compte, URLs et identifiants de média. Rien n’est envoyé automatiquement.
+En cas de défaut, ouvrir **Cadrage Fold → Options avancées → Diagnostic du lecteur → Copier**. Joindre ce texte et une capture courte. Le rapport inclut lifecycle, fenêtre, viewport, surfaces, rails, branches cachées, décor, scrim, largeur des métadonnées, bandeau partagé et raisons de repli. Il exclut textes, captions, usernames, identifiants de compte, URLs et identifiants de média. Rien n’est envoyé automatiquement.
 
 Les tests CI portent sur des vues Android simulées, pas sur le décodeur Instagram, le tactile physique du Fold ou son compositeur. Aucun APKM Instagram n’a été fourni pour cette itération : le chargement du bundle est vérifié, mais son application à l’APKM exact reste à confirmer dans Morphe.
 
 ## Fichiers durables
 
-[Release 4.1.0](https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.0) : `PatchInsta-4.1.0.mpp`, `PatchInsta-4.1.0.zip`, `SHA256SUMS.txt`, ce guide, licence, notice, changelog, sources et informations de compilation. Le ZIP contient le même `.mpp` que le fichier direct. Ses sommes internes vérifient les fichiers qu’il contient ; les sommes externes vérifient aussi le ZIP.
+[Release 4.1.1](https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.1) : `PatchInsta-4.1.1.mpp`, `PatchInsta-4.1.1.zip`, `SHA256SUMS.txt`, ce guide, licence, notice, changelog, sources et informations de compilation. Le ZIP contient le même `.mpp` que le fichier direct. Ses sommes internes vérifient les fichiers qu’il contient ; les sommes externes vérifient aussi le ZIP.
 
 GPL-3.0-or-later ; les mentions Piko amont sont conservées. Aucun APK Instagram redistribué.

@@ -7,6 +7,8 @@ import json
 import os
 import subprocess
 import tempfile
+import time
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import urlopen
@@ -34,9 +36,30 @@ def metadata(config, release):
     version_tuple(config['version'])
     # Manager's DTO uses kotlinx.datetime.LocalDateTime, without a timezone suffix.
     created = datetime.fromisoformat(release['published_at'].replace('Z','+00:00')).astimezone(timezone.utc).replace(tzinfo=None).isoformat(timespec='seconds')
-    return {'created_at':created, 'description':'Instagram : démarrage immédiat, commentaire seul, scrim plein écran et métadonnées compactes.',
+    return {'created_at':created, 'description':'Instagram : rattrapage au premier dessin, bandeau fixe, contour et calques de métadonnées corrigés.',
             'download_url':f"https://github.com/{config['repository']}/releases/download/v{config['version']}/PatchInsta-{config['version']}.mpp",
             'signature_download_url':None, 'page_url':release['html_url'], 'version':config['version']}
+
+
+def verify_public(url, feed, checksum, opener=urlopen, delay=time.sleep):
+    # GitHub raw may serve the previous feed briefly after the ref advances. Verify
+    # the SAME stable URL as Manager, not a cache-busted URL that would mask this.
+    for attempt in range(7):
+        try:
+            with opener(url, timeout=40) as response:
+                remote = json.load(response)
+        except HTTPError as error:
+            if error.code not in (404, 502, 503, 504) or attempt == 6:
+                raise
+        else:
+            if remote == feed:
+                with opener(remote['download_url'], timeout=40) as response:
+                    if hashlib.sha256(response.read()).hexdigest() != checksum:
+                        raise ValueError('Anonymous MPP download checksum differs')
+                return
+            if attempt == 6:
+                raise ValueError('Stable anonymous source still differs after bounded CDN retries')
+        delay(min(5 * (attempt + 1), 30))
 
 
 def publish(root):
@@ -91,14 +114,7 @@ def publish(root):
     # Never present authenticated access as a working remote source in Manager.
     url = f'https://raw.githubusercontent.com/{repo}/main/patches-bundle.json'
     try:
-        with urlopen(url, timeout=40) as response:
-            remote = json.load(response)
-        if remote != feed:
-            raise ValueError('Anonymous source metadata differs (possibly CDN cache); retry verification')
-        with urlopen(remote['download_url'], timeout=40) as response:
-            import hashlib
-            if hashlib.sha256(response.read()).hexdigest() != actual['PatchInsta-'+config['version']+'.mpp']:
-                raise ValueError('Anonymous MPP download checksum differs')
+        verify_public(url, feed, actual['PatchInsta-'+config['version']+'.mpp'])
         status['anonymous_access'] = True
     except HTTPError as error:
         if not private or error.code not in (403,404):

@@ -1,6 +1,6 @@
 # PatchInsta
 
-**Adaptive Fold Reels**, dérivé non officiel de **Piko 3.9.0**, pour adapter les Réels Instagram aux deux écrans du Galaxy Z Fold. Bundle **4.1.0** ; le nom de la source et celui du patch restent identiques lors des prochaines mises à jour.
+**Adaptive Fold Reels**, dérivé non officiel de **Piko 3.9.0**, pour adapter les Réels Instagram aux deux écrans du Galaxy Z Fold. Bundle **4.1.1** ; le nom de la source et celui du patch restent identiques lors des prochaines mises à jour.
 
 Cible : **Instagram 439.0.0.37.89**, APKM original, **arm64-v8a / versionCode 384510827**. Aucun APK Instagram n’est distribué.
 
@@ -12,9 +12,9 @@ Cible : **Instagram 439.0.0.37.89**, APKM original, **arm64-v8a / versionCode 38
 https://github.com/senor-roboto/PatchInsta
 ```
 
-[JSON de la source](https://raw.githubusercontent.com/senor-roboto/PatchInsta/main/patches-bundle.json) · [Dernière Release](https://github.com/senor-roboto/PatchInsta/releases/latest) · [Guide français](GUIDE-FR.md) · [Analyse et limites](ENGINEERING-4.1.md)
+[JSON de la source](https://raw.githubusercontent.com/senor-roboto/PatchInsta/main/patches-bundle.json) · [Dernière Release](https://github.com/senor-roboto/PatchInsta/releases/latest) · [Guide français](GUIDE-FR.md) · [Analyse et limites](ENGINEERING-4.1.1.md)
 
-**L’accès distant exige un dépôt public.** Si GitHub demande une connexion ou renvoie 404, la source privée n’est pas téléchargeable par Morphe. Une connexion GitHub dans le navigateur ne fournit pas d’authentification au gestionnaire.
+Le dépôt est désormais public. Si PatchInsta est déjà ajouté dans Morphe, **actualiser cette même source vers 4.1.1**, repatcher l’APKM original et installer par-dessus. Aucun nouvel import de source n’est nécessaire.
 
 ## Première installation / migration depuis la v4 locale
 
@@ -31,12 +31,12 @@ https://github.com/senor-roboto/PatchInsta
 | Vidéo | Remplissage/crop live | Vidéo native entière |
 | Barres Android / onglets Instagram | Masqués pendant les Réels | Conservés |
 | Actions | Commentaire seul et compteur associé | Toutes |
-| Auteur et caption | Vues natives compactes, une ligne de caption | Présentation complète |
+| Auteur et caption | Vues natives compactes, y compris les calques frères et les comptes déjà suivis | Présentation complète |
 | Décor et dégradé | Décor reconnu neutralisé ; dégradé supérieur conservé et étendu | État natif restauré |
 
 **Instagram complet** restaure la présentation native du cover. **Personnaliser** donne accès aux trois modes d’actions, trois modes de métadonnées et aux options indépendantes. Le cadrage, le zoom et le raccourci sont mémorisés par écran. Aucun changement de mode, pliage ou swipe ne demande un rechargement automatique du lecteur.
 
-Le bloc interactif reste à l’intérieur des limites tactiles du viewer. Une variante dont ces limites s’arrêtent au-dessus des anciens onglets peut donc conserver un retrait en bas ; le patch privilégie des boutons fonctionnels. Un décor ou une structure non reconnus restent natifs. Le diagnostic explique les détections sans copier de contenu utilisateur.
+Le bloc interactif reste à l’intérieur des limites tactiles du viewer. Une variante dont ces limites s’arrêtent au-dessus des anciens onglets peut donc conserver un retrait en bas ; le patch privilégie des boutons fonctionnels. Le bandeau partagé reconnu reste ancré au viewport et le raccourci se place en dessous. Un décor ou une structure non reconnus restent natifs. Le diagnostic explique les détections sans copier de contenu utilisateur.
 
 ## Mises à jour suivantes
 
@@ -46,7 +46,7 @@ Le package et la signature doivent rester identiques. Réinstaller Morphe sans r
 
 ## Téléchargement manuel durable
 
-[PatchInsta-4.1.0.mpp](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/PatchInsta-4.1.0.mpp) · [PatchInsta-4.1.0.zip](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/PatchInsta-4.1.0.zip) · [SHA-256](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/SHA256SUMS.txt)
+[PatchInsta-4.1.1.mpp](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/PatchInsta-4.1.1.mpp) · [PatchInsta-4.1.1.zip](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/PatchInsta-4.1.1.zip) · [SHA-256](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/SHA256SUMS.txt)
 
 Les fichiers de Release sont durables. Les artefacts Actions servent uniquement au transfert et au diagnostic de CI.
 

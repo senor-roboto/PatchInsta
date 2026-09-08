@@ -1,17 +1,16 @@
-PatchInsta 4.1.0, dérivé non officiel de Piko 3.9.0, pour Instagram **439.0.0.37.89 / arm64-v8a / versionCode 384510827**.
+PatchInsta 4.1.1 corrige les chemins de présentation signalés après les essais réels de la 4.1.0.
 
-- Démarrage du presenter depuis le viewer attaché, sans attendre un pliage.
-- Presets **Plein écran propre** et **Instagram complet** ; commentaire seul ; métadonnées natives compactes.
-- Dégradé supérieur reconnu étendu au bord du viewport ; décor de card reconnu neutralisé et réversible.
-- Renderer v4 conservé : voisins précadrés, swipe, clipping et gestes ; aucun rechargement automatique.
-- Source Morphe stable, ZIP, bundle direct, checksums et informations de compilation vérifiés.
+- Rattrapage au premier dessin du viewer et résolution du propriétaire de fenêtre quand le contexte d’inflation n’est pas une Activity.
+- Bandeau partagé ancré au viewport pendant les swipes ; raccourci placé sous le bandeau ; dégradé de background étendu sans agrandir les textes.
+- Métadonnées découvertes dans les overlays frères du wrapper vidéo, mode compact aussi sans bouton Suivre, caption native spécialisée bornée sans copie de texte.
+- Bordures de calques décoratifs correspondants et composites nettoyées en conservant les gradients.
 
-[Ajouter à Morphe](https://morphe.software/add-source?github=senor-roboto%2FPatchInsta) — URL manuelle : `https://github.com/senor-roboto/PatchInsta`.
+La vidéo, les pages préchargées et les gestes continuent d’utiliser le lecteur Instagram existant. Aucun rechargement automatique ni changement des MobileConfig v4 par défaut.
 
-La source distante nécessite que ce dépôt soit **public**. Un accès GitHub authentifié aux fichiers privés ne suffit pas pour Morphe.
+**Morphe :** actualiser la source PatchInsta déjà ajoutée vers **4.1.1**, repatcher l’APKM original **439.0.0.37.89 / arm64-v8a / 384510827**, puis installer par-dessus avec le même package Clone et le même keystore. Mettre à jour le bundle seul ne modifie pas l’APK déjà installé. Aucun nouvel import de source nécessaire.
 
-Cocher **Adaptive Fold Reels** avec les patchs de cette source uniquement. Repartir de l’APKM original, conserver le **même package Clone et le même keystore Morphe**, puis installer par-dessus. Dans le lecteur, appui long sur le raccourci → **Plein écran propre** pour appliquer tous les nouveaux choix.
+La CI exige 76 scénarios Android, 305 assertions JVM, 13 mappings FR/EN et 9 tests de distribution, puis compile et charge le vrai MPP avec Morphe. Elle vérifie aussi les assets téléchargés, le ZIP, leurs SHA-256 et l’accès anonyme de la source publique.
 
-Les tests CI et le chargement réel du bundle sont détaillés dans `build-info.json` et `test-results.json`. Pas de validation matérielle Samsung ni d’application à un APKM durant cette itération ; les détections inconnues restent natives. Le bloc interactif respecte les limites tactiles du viewer, ce qui peut laisser un retrait inférieur.
+Les scénarios Android reproduisent des hiérarchies et gestes ; ils ne constituent pas une exécution d’Instagram sur le Fold. Les captures et la vidéo ont été analysées, mais leur hiérarchie de vues n’est pas accessible. Les branches inconnues restent natives ; le diagnostic structurel permet de les identifier sans extraire de texte utilisateur.
 
-Consulter `GUIDE-FR.md`, `SHA256SUMS.txt` et le [compte rendu](https://github.com/senor-roboto/PatchInsta/blob/main/ENGINEERING-4.1.md).
+Consulter GUIDE-FR.md, ENGINEERING-4.1.1.md dans le dépôt et build-info.json / test-results.json dans la Release.

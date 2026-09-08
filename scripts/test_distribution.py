@@ -4,10 +4,35 @@ import unittest
 import zipfile
 from pathlib import Path
 from bundle import digest, validate_mpp, verify_checksums, version_tuple
-from publish import metadata
+from publish import metadata, verify_public
+from io import BytesIO
+import hashlib
 
 
 class DistributionTests(unittest.TestCase):
+    def test_stable_url_retries_old_cached_feed_then_verifies_new_bytes(self):
+        feed={'version':'4.1.1','download_url':'https://example.test/new.mpp'}
+        replies=[json.dumps({'version':'4.1.0'}).encode(), json.dumps(feed).encode(), b'new bundle']
+        urls=[]; waits=[]
+        def open_response(url, **kwargs):
+            urls.append(url); return BytesIO(replies.pop(0))
+        verify_public('https://example.test/patches-bundle.json',feed,hashlib.sha256(b'new bundle').hexdigest(),open_response,waits.append)
+        self.assertEqual(urls[:2],['https://example.test/patches-bundle.json']*2)
+        self.assertEqual(urls[-1],feed['download_url']); self.assertEqual(waits,[5])
+
+    def test_anonymous_corruption_is_not_hidden_by_retries(self):
+        feed={'version':'4.1.1','download_url':'https://example.test/new.mpp'}
+        replies=[json.dumps(feed).encode(),b'wrong']; waits=[]
+        with self.assertRaisesRegex(ValueError,'checksum'):
+            verify_public('https://example.test/feed',feed,hashlib.sha256(b'right').hexdigest(),lambda *a,**k:BytesIO(replies.pop(0)),waits.append)
+        self.assertEqual(waits,[])
+
+    def test_permanently_stale_feed_has_a_bounded_failure(self):
+        waits=[]
+        with self.assertRaisesRegex(ValueError,'bounded'):
+            verify_public('https://example.test/feed',{'version':'4.1.1'},'unused',lambda *a,**k:BytesIO(b'{}'),waits.append)
+        self.assertEqual(len(waits),6)
+
     def test_bundle_rejects_a_jar_without_android_dex(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'test.mpp'

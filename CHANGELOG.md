@@ -1,3 +1,11 @@
+# 4.1.1
+
+* **Instagram:** Rattrapage du premier dessin et des contextes d’inflation sans Activity, sans recharger le lecteur.
+* **Instagram:** Bandeau partagé maintenu au viewport pendant les swipes ; raccourci déplacé sous sa zone tactile et dégradé conservé jusqu’au bord supérieur.
+* **Instagram:** Métadonnées des calques frères du player, comptes sans bouton Suivre et captions natives spécialisées pris en charge en mode compact.
+* **Instagram:** Bordures arrondies de calques superposés et composites séparées du dégradé avec restauration native.
+* **Instagram:** Source Morphe publique conservée ; téléchargement anonyme vérifié après propagation du feed.
+
 # Changelog
 
 ## [4.1.0](https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.0) (2026-09-08)
