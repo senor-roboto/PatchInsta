@@ -74,29 +74,3 @@ jobs:
               raise SystemExit('Android regression scenarios did not all pass')
           PYTEST
 
-      - name: Prepare the experimental bundle
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import hashlib
-          import shutil
-          files = list(Path('upstream/patches/build/libs').glob('*.mpp'))
-          if len(files) != 1:
-              raise SystemExit(f'Expected one .mpp; found {len(files)}')
-          out = Path('output')
-          out.mkdir()
-          dest = out / 'piko-fold-reels-v4.mpp'
-          shutil.copy2(files[0], dest)
-          digest = hashlib.sha256(dest.read_bytes()).hexdigest()
-          (out / 'SHA256SUMS.txt').write_text(f'{digest}  {dest.name}\n')
-          for name in ('NOTICE', 'LICENSE', 'GUIDE-FR.md'):
-              shutil.copy2(name, out / name)
-          PY
-
-      - name: Downloadable bundle (no release is published)
-        uses: actions/upload-artifact@v4
-        with:
-          name: piko-fold-reels-v4
-          path: output/
-          if-no-files-found: error
-          retention-days: 14
