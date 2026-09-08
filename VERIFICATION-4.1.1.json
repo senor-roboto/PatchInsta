@@ -1,0 +1,146 @@
+{
+  "version": "4.1.1",
+  "repository": "senor-roboto/PatchInsta",
+  "reference_head": "4179fde1606ce692f029c4679738876d38973c0c",
+  "source_commit": "ffd516f5afb2987c8eb79b08136574b825f18b21",
+  "feed_commit": "524bd5e596cad8843f9ea4ac2d94a851b03e8bfb",
+  "published_at": "2026-09-08T22:35:08Z",
+  "ci": {
+    "run_id": 34286382910,
+    "url": "https://github.com/senor-roboto/PatchInsta/actions/runs/34286382910",
+    "conclusion": "success",
+    "build_job": 102262845859,
+    "release_job": 102263597035
+  },
+  "tests": {
+    "android_scenarios": 77,
+    "suites": {
+      "runtime": 14,
+      "lifecycle": 18,
+      "presentation": 23,
+      "scrim": 5,
+      "preferences": 4,
+      "update_regressions": 13
+    },
+    "ignored": 0,
+    "policy_geometry_assertions": 305,
+    "mapping_keys": 13,
+    "distribution_scenarios": 14,
+    "real_morphe_loader_public_patches": 133
+  },
+  "target": {
+    "package": "com.instagram.android",
+    "version": "439.0.0.37.89",
+    "versionCode": 384510827,
+    "abi": "arm64-v8a",
+    "upstream": "crimera/piko",
+    "upstream_commit": "50744aa07bb41c4e1f942a06614ef4e6f2e3610c"
+  },
+  "verification": {
+    "actual_mpp_compiled": true,
+    "real_morphe_loader": true,
+    "zip_matches_standalone_mpp": true,
+    "all_release_assets_downloaded_and_hash_checked": true,
+    "github_asset_digests_match_downloads": true,
+    "stable_source_anonymous_access": true,
+    "anonymous_mpp_sha256_verified": true,
+    "instagram_apkm_patched_here": false,
+    "physical_fold_validation": false,
+    "automatic_player_recreation_added": false
+  },
+  "release": {
+    "id": 385100237,
+    "tag": "v4.1.1",
+    "draft": false,
+    "url": "https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.1",
+    "assets": [
+      {
+        "name": "build-info.json",
+        "size": 1500,
+        "sha256": "7eabe54bdc9fbb246013041c5426838924e6d445bb9abbcbba1ca63cc4a92b34",
+        "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/build-info.json"
+      },
+      {
+        "name": "CHANGELOG.md",
+        "size": 1823,
+        "sha256": "13fc71bee6a435b20d9cee440acad4e3f3a02df5703e4d55aed21c8133393ed2",
+        "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/CHANGELOG.md"
+      },
+      {
+        "name": "GUIDE-FR.md",
+        "size": 8131,
+        "sha256": "aabf549b2806b22a745115b2478ec17c89e21bf027952d6f26a7821c7cef580e",
+        "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/GUIDE-FR.md"
+      },
+      {
+        "name": "LICENSE",
+        "size": 35149,
+        "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/LICENSE"
+      },
+      {
+        "name": "NOTICE",
+        "size": 231,
+        "sha256": "1e05897eb4fc4076bef4bf5644a9fcfbcbe3cab8a73b3f283128dba4e22560e6",
+        "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/NOTICE"
+      },
+      {
+        "name": "patches-list.json",
+        "size": 60506,
+        "sha256": "2d2b77e59dc8b2096c3bd1ada0d40f68956a0bc776a98e40def2c377dc0b0072",
+        "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/patches-list.json"
+      },
+      {
+        "name": "PatchInsta-4.1.1.mpp",
+        "size": 6809703,
+        "sha256": "b8a8c1fb414c7017229af28a30bda0d7b1ef7054ac8964902085e440d2e0aee1",
+        "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/PatchInsta-4.1.1.mpp"
+      },
+      {
+        "name": "PatchInsta-4.1.1.zip",
+        "size": 6592459,
+        "sha256": "65110d14cd7907c6e951cce33b40a1f76c4c60dc1b77ad8c09da97c8ee7119d3",
+        "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/PatchInsta-4.1.1.zip"
+      },
+      {
+        "name": "piko-fold-reels.patch",
+        "size": 273982,
+        "sha256": "403ce59db62a99ccbba69c49e607db7875a8d6094254e3b06f2b6e29717b09b0",
+        "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/piko-fold-reels.patch"
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "size": 816,
+        "sha256": "249a249952fe7b09f4deaccca380329277b86bdac5e725a93396d581f27fe2e2",
+        "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/SHA256SUMS.txt"
+      },
+      {
+        "name": "test-results.json",
+        "size": 374,
+        "sha256": "96d884c09e1d6b953a8479f215909dba30f6f43c7b4f21ceb96f808a8d973360",
+        "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/test-results.json"
+      }
+    ]
+  },
+  "morphe": {
+    "source_url": "https://github.com/senor-roboto/PatchInsta",
+    "feed_url": "https://raw.githubusercontent.com/senor-roboto/PatchInsta/main/patches-bundle.json",
+    "deep_link": "https://morphe.software/add-source?github=senor-roboto%2FPatchInsta",
+    "existing_source_identity_preserved": true,
+    "feed": {
+      "created_at": "2026-09-08T22:35:08",
+      "description": "Instagram : rattrapage au premier dessin, bandeau fixe, contour et calques de métadonnées corrigés.",
+      "download_url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/PatchInsta-4.1.1.mpp",
+      "page_url": "https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.1",
+      "signature_download_url": null,
+      "version": "4.1.1"
+    }
+  },
+  "limitations": [
+    "Android view tests run under Robolectric, not Instagram on Samsung.",
+    "No Instagram APKM or structural device dump was provided.",
+    "Unknown view/drawable structures stay native.",
+    "Interactive metadata remains inside the native viewer touch boundary.",
+    "Native non-TextView captions are clipped to one visible line; native ellipsis is not guaranteed."
+  ]
+}

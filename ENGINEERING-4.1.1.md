@@ -1,5 +1,18 @@
 # PatchInsta 4.1.1 — correctifs après tests Fold
 
+## Résultat publié
+
+**Release 4.1.1 publiée ; [CI 34286382910 entièrement verte](https://github.com/senor-roboto/PatchInsta/actions/runs/34286382910).**
+
+- Commit compilé : `ffd516f5afb2987c8eb79b08136574b825f18b21` ; feed : `524bd5e596cad8843f9ea4ac2d94a851b03e8bfb`.
+- 77 scénarios Android, 305 assertions JVM, 13 mappings et 14 tests de distribution réussis ; aucun scénario Android ignoré.
+- MPP réel compilé ; loader Morphe : 133 patchs chargés, cible Instagram vérifiée.
+- 11 assets durables relus après upload ; ZIP et MPP cohérents ; **accès anonyme du feed stable et SHA-256 du MPP public vérifiés**.
+- [MPP](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/PatchInsta-4.1.1.mpp) : `b8a8c1fb414c7017229af28a30bda0d7b1ef7054ac8964902085e440d2e0aee1` (6 809 703 octets).
+- [ZIP](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/PatchInsta-4.1.1.zip) : `65110d14cd7907c6e951cce33b40a1f76c4c60dc1b77ad8c09da97c8ee7119d3` (6 592 459 octets).
+
+[Relevé complet des vérifications et URLs](VERIFICATION-4.1.1.json) · [Guide de mise à jour](GUIDE-FR.md). Actualiser la source PatchInsta existante, repatcher l’APKM original puis installer par-dessus avec le même package Clone et la même clé ; aucune réimportation de source.
+
 ## Point de départ et observations
 
 HEAD audité : `4179fde1606ce692f029c4679738876d38973c0c`, Release 4.1.0, source désormais publique. Reprise des sources cumulatives existantes, sans remplacement de l’amont Piko 3.9.0 épinglé. Cible Instagram inchangée : 439.0.0.37.89, arm64-v8a, versionCode 384510827. La spécification `PROMPT_GPT6_PATCHINSTA.md` et les derniers retours restent la référence.
@@ -34,4 +47,4 @@ La CI compile réellement le MPP, charge son patch avec le loader Morphe et vér
 
 Le workflow publie une nouvelle Release immuable, vérifie à nouveau les 11 fichiers téléchargés, puis avance **le même** `patches-bundle.json` sans force-push. Le contrôle anonyme attend de façon bornée la propagation du JSON sur son URL stable ; une mauvaise somme du MPP fait échouer la vérification. Aucune nouvelle URL de source n’est créée.
 
-Les résultats de la compilation, la révision exacte, les hashes et les URLs seront enregistrés après la CI dans `VERIFICATION-4.1.1.json`. La Release fournit `build-info.json`, `test-results.json` et `SHA256SUMS.txt` ; aucune validation physique nouvelle n’est revendiquée.
+Les résultats de la compilation, la révision exacte, les hashes et les URLs sont enregistrés dans [VERIFICATION-4.1.1.json](VERIFICATION-4.1.1.json). La Release fournit `build-info.json`, `test-results.json` et `SHA256SUMS.txt` ; aucune validation physique nouvelle n’est revendiquée.
