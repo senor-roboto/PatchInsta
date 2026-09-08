@@ -44,7 +44,7 @@ Le diagnostic précise raison d’inactivité, resumed connu/inconnu, focus, vis
 
 ## Tests et livraison
 
-**L / M — Couverture attendue et contrôlée par la CI :** 60 scénarios Android (14 régressions v4, 14 lifecycle, 23 présentation, 5 scrim, 4 préférences), 305 assertions JVM géométrie/politique, 13 mappings exacts et XML FR/EN, 6 tests des garde-fous de distribution. Zéro test Android ignoré accepté. Le chargement du `.mpp` réel utilise le loader Morphe et vérifie le nom du patch et la cible Instagram.
+**L / M — Couverture vérifiée :** 60 scénarios Android (14 régressions v4, 14 lifecycle, 23 présentation, 5 scrim, 4 préférences), 305 assertions JVM géométrie/politique, 13 mappings exacts et XML FR/EN, 6 tests des garde-fous de distribution. Zéro test Android ignoré accepté. Le chargement du `.mpp` réel utilise le loader Morphe et vérifie le nom du patch et la cible Instagram.
 
 Les tests de lifecycle utilisent le vrai watcher/presenter, des vues attachées et une Activity créée/résumée avant son installation. Focus et visibilité de fenêtre sont des entrées contrôlées de simulation : Robolectric API 29 signalait GONE malgré une fenêtre déclarée visible. La protection de production est conservée et un scénario vérifie explicitement ce refus. Le compositeur et le décodeur Samsung ne sont pas simulés.
 
@@ -56,7 +56,7 @@ Les nouveaux tests ont trouvé et permis de corriger le chevauchement tactile in
 
 **P — Version :** 4.1.0 ; nom de source **PatchInsta (Piko, unofficial)** ; nom de patch **Adaptive Fold Reels**. Ce numéro est celui du dérivé distribué, pas une prétendue version Piko amont 4.1.
 
-**Q / R — CI et preuves :** [workflow](https://github.com/senor-roboto/PatchInsta/actions/workflows/build-fold-reels.yml). `build-info.json` donne le run et le commit exacts ; `test-results.json` donne le décompte vérifié. La phase de build ne possède pas de droit d’écriture GitHub ; la phase de publication utilise le jeton normal du workflow après les tests. Elle relit les assets téléchargés, les compare aux sommes attendues, publie la Release puis avance le feed sans force-push. Un déplacement concurrent de main ou une version non incrémentée bloque une publication incohérente.
+**Q / R — CI et preuves :** Les 60 scénarios, le build, le chargement des 133 patchs et la préparation des fichiers ont réussi dans le [run 34215073093](https://github.com/senor-roboto/PatchInsta/actions/runs/34215073093), avant correction de la récupération du brouillon de Release. Le run de publication définitif est enregistré dans les informations de compilation.  [workflow](https://github.com/senor-roboto/PatchInsta/actions/workflows/build-fold-reels.yml). `build-info.json` donne le run et le commit exacts ; `test-results.json` donne le décompte vérifié. La phase de build ne possède pas de droit d’écriture GitHub ; la phase de publication utilise le jeton normal du workflow après les tests. Elle relit les assets téléchargés, les compare aux sommes attendues, publie la Release puis avance le feed sans force-push. Un déplacement concurrent de main ou une version non incrémentée bloque une publication incohérente.
 
 | Référence | Livrable / URL durable |
 |---|---|
