@@ -4,12 +4,26 @@ import unittest
 import zipfile
 from pathlib import Path
 from bundle import digest, validate_mpp, verify_checksums, version_tuple
-from publish import metadata, verify_public
+from publish import metadata, verify_public, find_release
 from io import BytesIO
 import hashlib
 
 
 class DistributionTests(unittest.TestCase):
+    def test_existing_draft_lookup_tolerates_delayed_collection_without_recreating(self):
+        release={'id':123,'tag_name':'v4.1.1','draft':True};replies=[[],[],[release]];waits=[];calls=[]
+        def request(path):
+            calls.append(path);return replies.pop(0)
+        self.assertEqual(find_release('repos/example/repo','v4.1.1',request,waits.append),release)
+        self.assertEqual(waits,[2,4]);self.assertEqual(len(calls),3)
+        self.assertTrue(all(p.endswith('/releases?per_page=100') for p in calls))
+
+    def test_missing_known_draft_fails_without_unbounded_wait_or_mutation(self):
+        waits=[]
+        with self.assertRaisesRegex(ValueError,'Known release'):
+            find_release('repos/example/repo','v4.1.1',lambda p:[],waits.append)
+        self.assertEqual(len(waits),5)
+
     def test_stable_url_retries_old_cached_feed_then_verifies_new_bytes(self):
         feed={'version':'4.1.1','download_url':'https://example.test/new.mpp'}
         replies=[json.dumps({'version':'4.1.0'}).encode(), json.dumps(feed).encode(), b'new bundle']

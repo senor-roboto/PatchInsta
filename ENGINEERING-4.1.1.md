@@ -26,7 +26,9 @@ Le diagnostic ajoute les bandes partagées détectées, leur maintien, les backg
 
 ## Vérification et publication
 
-Tests exigés avant publication : 77 scénarios Android (14 runtime, 18 lifecycle, 23 présentation, 5 scrim, 4 préférences, 13 régressions vidéo/overlays), 305 assertions géométrie/politique, 13 mappings et XML FR/EN, 9 tests de distribution. Les nouveaux scénarios couvrent Application Context, premier dessin sans constructeur, observateur perdu, vraie notification pre-draw, animations du header, clic natif, scrim du header, overlays frères, comptes suivis, caption spécialisée, séparation des pages et restauration du contour composite. Aucun scénario ignoré accepté.
+Tests exigés avant publication : 77 scénarios Android (14 runtime, 18 lifecycle, 23 présentation, 5 scrim, 4 préférences, 13 régressions vidéo/overlays), 305 assertions géométrie/politique, 13 mappings et XML FR/EN, 11 tests de distribution. Les nouveaux scénarios couvrent Application Context, premier dessin sans constructeur, observateur perdu, vraie notification pre-draw, animations du header, clic natif, scrim du header, overlays frères, comptes suivis, caption spécialisée, séparation des pages et restauration du contour composite. Aucun scénario ignoré accepté.
+
+Les premiers runs ont exposé le cas Android 10 où `GradientDrawable.getCornerRadii()` lève une exception pour une forme sans tableau de rayons : ce cas est maintenant traité comme un rectangle ordinaire. La suite de 77 scénarios et la compilation passent au run `34285200558`. Sa publication a révélé un second défaut de distribution : la collection REST publique ne contenait pas immédiatement le brouillon créé. Le publisher utilise désormais directement l’identifiant de la réponse POST et des reprises bornées pour un brouillon existant ; aucun nouveau brouillon n’est créé pour contourner une lecture retardée.
 
 La CI compile réellement le MPP, charge son patch avec le loader Morphe et vérifie la compatibilité annoncée. Cette opération ne remplace pas un patching de l’APKM ni une exécution sur Android 17/Samsung. L’extension est validée par des tests Android simulés.
 
