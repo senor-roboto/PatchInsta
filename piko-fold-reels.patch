@@ -744,10 +744,10 @@ index 0000000..625afd8
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsCardChrome.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsCardChrome.java
 new file mode 100644
-index 0000000..2a5eba1
+index 0000000..1d92eee
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsCardChrome.java
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,173 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -826,9 +826,14 @@ index 0000000..2a5eba1
 +            GradientDrawable g=(GradientDrawable)d;
 +            if(g.getShape()!=GradientDrawable.RECTANGLE)return false;
 +            if(g.getCornerRadius()>0)return true;
-+            float[] radii=g.getCornerRadii(); if(radii!=null)for(float r:radii)if(r>0)return true;
++            float[] radii=cornerRadii(g); if(radii!=null)for(float r:radii)if(r>0)return true;
 +        }
 +        return rounded(d, depth);
++    }
++    private static float[] cornerRadii(GradientDrawable drawable) {
++        // API 29 clones its nullable radius array without checking for null.
++        // An ordinary rectangle is not a failure of the whole card component.
++        try { return drawable.getCornerRadii(); } catch (NullPointerException unset) { return null; }
 +    }
 +    /** Clone composites before surgery: shared native ConstantStates are never mutated.
 +     * Keep the contrast gradient, while removing its stroke/rounding or a border layer. */
@@ -857,7 +862,7 @@ index 0000000..2a5eba1
 +            // needs device evidence before separating its border from its scrim.
 +            if (gradient.getColors() != null && gradient.getColors().length > 1) return false;
 +            if (gradient.getCornerRadius() > 0) return true;
-+            float[] radii = gradient.getCornerRadii();
++            float[] radii = cornerRadii(gradient);
 +            if (radii != null) for (float radius : radii) if (radius > 0) return true;
 +        } else if (drawable instanceof LayerDrawable) {
 +            LayerDrawable layers = (LayerDrawable) drawable;
