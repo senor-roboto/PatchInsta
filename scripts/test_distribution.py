@@ -4,12 +4,29 @@ import unittest
 import zipfile
 from pathlib import Path
 from bundle import digest, validate_mpp, verify_checksums, version_tuple
-from publish import metadata, verify_public, find_release
+from publish import metadata, verify_public, find_release, select_release, upload_assets
 from io import BytesIO
 import hashlib
 
 
 class DistributionTests(unittest.TestCase):
+    def test_recovers_only_our_empty_untagged_draft(self):
+        draft={'id':1,'tag_name':'untagged-123','draft':True,'assets':[],
+               'name':'PatchInsta 4.1.1','author':{'login':'github-actions[bot]'}}
+        self.assertEqual(select_release([draft],'v4.1.1','PatchInsta 4.1.1'),draft)
+        for changed in ({'draft':False},{'assets':[{'name':'keep.mpp'}]},{'name':'Different release'},{'author':{'login':'owner'}}):
+            self.assertIsNone(select_release([{**draft,**changed}],'v4.1.1','PatchInsta 4.1.1'))
+
+    def test_published_assets_cannot_be_replaced_by_upload_helper(self):
+        with self.assertRaisesRegex(ValueError,'immutable'):
+            upload_assets('repos/owner/repo',{'draft':False},Path('unused'))
+
+    def test_ambiguous_drafts_require_resolution_instead_of_guessing(self):
+        draft={'id':1,'tag_name':'untagged-1','draft':True,'assets':[],
+               'name':'PatchInsta 4.1.1','author':{'login':'github-actions[bot]'}}
+        with self.assertRaisesRegex(ValueError,'Ambiguous'):
+            select_release([draft,{**draft,'id':2,'tag_name':'untagged-2'}],'v4.1.1','PatchInsta 4.1.1')
+
     def test_existing_draft_lookup_tolerates_delayed_collection_without_recreating(self):
         release={'id':123,'tag_name':'v4.1.1','draft':True};replies=[[],[],[release]];waits=[];calls=[]
         def request(path):

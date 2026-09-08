@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import urlopen
 from urllib.error import HTTPError
+from urllib.parse import quote
 from bundle import verify_kit, version_tuple
 
 
@@ -42,6 +43,46 @@ def find_release(base, tag, request=api, delay=time.sleep):
         if attempt < 5:
             delay(2 * (attempt + 1))
     raise ValueError('Known release is not yet visible in the REST collection')
+
+
+def select_release(releases, tag, name):
+    exact = [r for r in releases if r['tag_name'] == tag]
+    if len(exact) > 1:
+        raise ValueError('Ambiguous versioned releases')
+    if exact:
+        return exact[0]
+    # Recover the empty Actions draft left by a failed retarget operation. GitHub
+    # can replace a draft's tag with untagged-* if an update omits tag_name.
+    pending = [r for r in releases if r['draft'] and not r['assets'] and r['name'] == name
+               and r['author']['login'] == 'github-actions[bot]' and r['tag_name'].startswith('untagged-')]
+    if len(pending) > 1:
+        raise ValueError('Ambiguous empty release drafts')
+    return pending[0] if pending else None
+
+
+def upload_assets(base, release, directory):
+    if not release['draft']:
+        raise ValueError('Published assets are immutable')
+    result=[]
+    for path in sorted(directory.iterdir()):
+        old=next((a for a in release['assets'] if a['name']==path.name),None)
+        if old:
+            api(base+'/releases/assets/'+str(old['id']), method='DELETE')
+        endpoint='https://uploads.github.com/'+base+'/releases/'+str(release['id'])+'/assets?name='+quote(path.name,safe='')
+        result.append(json.loads(gh('api',endpoint,'--method','POST','--header','Content-Type: application/octet-stream','--input',str(path))))
+    return result
+
+
+def download_assets(base, assets, directory):
+    for asset in assets:
+        name=asset['name']
+        if Path(name).name != name:
+            raise ValueError('Unsafe release asset name')
+        with (Path(directory)/name).open('wb') as output:
+            result=subprocess.run(['gh','api',base+'/releases/assets/'+str(asset['id']),
+                                   '--header','Accept: application/octet-stream'],stdout=output,stderr=subprocess.PIPE)
+        if result.returncode:
+            raise RuntimeError('Asset download failed: '+result.stderr.decode('utf-8',errors='replace'))
 
 
 def metadata(config, release):
@@ -86,27 +127,28 @@ def publish(root):
     if old_feed and version_tuple(config['version']) <= version_tuple(old_feed['version']):
         raise ValueError('Increment release.json and the bundle version before publishing a new source')
     expected = verify_kit(root/'output', config)
-    releases = json.loads(gh('release','list','--repo',repo,'--limit','100','--json','tagName,isDraft'))
-    existing = next((r for r in releases if r['tagName']==tag), None)
-    if not existing:
+    release = select_release(api(base+'/releases?per_page=100'),tag,'PatchInsta '+config['version'])
+    if release is None:
+        listed = json.loads(gh('release','list','--repo',repo,'--limit','100','--json','tagName,isDraft'))
+        if any(r['tagName'] == tag for r in listed):
+            release = find_release(base,tag) # Known to exist: wait for REST, never create a duplicate.
+    if release is None:
         # Use the POST response's numeric ID rather than trying to rediscover a new
         # draft through a public, potentially stale collection or /tags endpoint.
         release = api(base+'/releases', {'tag_name':tag,'target_commitish':head,
                       'name':'PatchInsta '+config['version'],'draft':True,
                       'body':(root/'RELEASE-NOTES.md').read_text()})
-    else:
-        release = find_release(base, tag)
     # Published releases are immutable here. A retry may finish publishing the feed but never
     # silently replace the already-distributed binary, which contains a build timestamp.
     if release['draft']:
-        if release['target_commitish'] != head:
+        if release['target_commitish'] != head or release['tag_name'] != tag:
             if release['assets'] or release['name'] != 'PatchInsta '+config['version'] or release['author']['login'] != 'github-actions[bot]':
                 raise ValueError('Nonempty or foreign draft belongs to a different source commit')
             release = api(base+'/releases/'+str(release['id']),
-                          {'target_commitish':head,'body':(root/'RELEASE-NOTES.md').read_text()}, 'PATCH')
-        gh('release','upload',tag,'--repo',repo,'--clobber',*[str(p) for p in sorted((root/'output').iterdir())])
+                          {'tag_name':tag,'target_commitish':head,'body':(root/'RELEASE-NOTES.md').read_text()}, 'PATCH')
+        release['assets'] = upload_assets(base,release,root/'output')
     with tempfile.TemporaryDirectory() as temp:
-        gh('release','download',tag,'--repo',repo,'--dir',temp)
+        download_assets(base,release['assets'],temp)
         actual = verify_kit(temp, config)
         info = json.loads((Path(temp)/'build-info.json').read_text())
         if info['source_commit'] != head:
@@ -115,7 +157,10 @@ def publish(root):
             raise ValueError('Downloaded release differs from prepared assets')
         print('Authenticated release download verified:',json.dumps(actual,sort_keys=True))
     if release['draft']:
-        release = api(base+'/releases/'+str(release['id']), {'draft':False,'make_latest':'true'}, 'PATCH')
+        release = api(base+'/releases/'+str(release['id']),
+                      {'tag_name':tag,'target_commitish':head,'draft':False,'make_latest':'true'}, 'PATCH')
+        if release['draft'] or release['tag_name'] != tag:
+            raise ValueError('GitHub did not publish the requested versioned release')
     feed = metadata(config, release)
     commit = api(base+'/git/commits/'+head)
     tree = api(base+'/git/trees', {'base_tree':commit['tree']['sha'], 'tree':[

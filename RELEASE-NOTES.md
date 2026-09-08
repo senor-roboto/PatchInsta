@@ -9,7 +9,7 @@ La vidéo, les pages préchargées et les gestes continuent d’utiliser le lect
 
 **Morphe :** actualiser la source PatchInsta déjà ajoutée vers **4.1.1**, repatcher l’APKM original **439.0.0.37.89 / arm64-v8a / 384510827**, puis installer par-dessus avec le même package Clone et le même keystore. Mettre à jour le bundle seul ne modifie pas l’APK déjà installé. Aucun nouvel import de source nécessaire.
 
-La CI exige 77 scénarios Android, 305 assertions JVM, 13 mappings FR/EN et 11 tests de distribution, puis compile et charge le vrai MPP avec Morphe. Elle vérifie aussi les assets téléchargés, le ZIP, leurs SHA-256 et l’accès anonyme de la source publique.
+La CI exige 77 scénarios Android, 305 assertions JVM, 13 mappings FR/EN et 14 tests de distribution, puis compile et charge le vrai MPP avec Morphe. Elle vérifie aussi les assets téléchargés, le ZIP, leurs SHA-256 et l’accès anonyme de la source publique.
 
 Les scénarios Android reproduisent des hiérarchies et gestes ; ils ne constituent pas une exécution d’Instagram sur le Fold. Les captures et la vidéo ont été analysées, mais leur hiérarchie de vues n’est pas accessible. Les branches inconnues restent natives ; le diagnostic structurel permet de les identifier sans extraire de texte utilisateur.
 
