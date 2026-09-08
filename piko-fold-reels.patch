@@ -975,7 +975,7 @@ index 0000000..4ce8600
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
 new file mode 100644
-index 0000000..76a14b9
+index 0000000..747c3ee
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
 @@ -0,0 +1,312 @@
@@ -1108,7 +1108,7 @@ index 0000000..76a14b9
 +        float limit = viewport.right;
 +        if (mode == Actions.NONE) return limit;
 +        for (Map.Entry<ViewGroup, Rail> entry : rails.entrySet()) {
-+            if (entry.getValue().page.get() == page && entry.getKey().isShown()) {
++            if ((entry.getValue().page.get() == page || FoldReelsViews.descendant(entry.getKey(), page)) && entry.getKey().isShown()) {
 +                FoldReelsViews.bounds(entry.getKey(), work, matrix); limit = Math.min(limit, work.left);
 +            }
 +        }
@@ -2314,10 +2314,10 @@ index c638224..ec2c587 100644
              addPreference(
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java
 new file mode 100644
-index 0000000..2d93ec7
+index 0000000..6ca4be4
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,135 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.app.Activity;
@@ -2341,7 +2341,7 @@ index 0000000..2d93ec7
 +@RunWith(RobolectricTestRunner.class)
 +@Config(sdk=29, manifest=Config.NONE, qualifiers="w420dp-h900dp-mdpi")
 +public class FoldReelsLifecycleTest {
-+    ActivityController<Host> controller; Host activity; FrameLayout body, viewer; TextureView video;
++    ActivityController<Host> controller; Host activity; FrameLayout body; WindowViewer viewer; TextureView video;
 +    @Before public void createResumedActivityBeforeInstallation() {
 +        FoldReels.resetForTests(); controller=Robolectric.buildActivity(Host.class).setup().visible(); activity=controller.get();
 +        activity.getSharedPreferences("piko_settings",0).edit().clear().commit();
@@ -2349,7 +2349,7 @@ index 0000000..2d93ec7
 +        int width=activity.getResources().getConfiguration().screenWidthDp;
 +        int height=activity.getResources().getConfiguration().screenHeightDp;
 +        body.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY)); body.layout(0,0,width,height);
-+        viewer=new FrameLayout(activity); FoldReelsTestFixture.add(body,viewer,0,0,width,height-140);
++        viewer=new WindowViewer(activity); FoldReelsTestFixture.add(body,viewer,0,0,width,height-140);
 +        FrameLayout page=new FrameLayout(activity); FoldReelsTestFixture.add(viewer,page,0,0,width,height-140);
 +        video=new TextureView(activity); FoldReelsTestFixture.add(page,video,30,0,width-60,height-140);
 +    }
@@ -2386,6 +2386,10 @@ index 0000000..2d93ec7
 +        activity.focused=false; FoldReels.Watcher.Tracker t=start(); assertFalse(t.active); assertNull(t.chip.get()); assertEquals(1,video.getScaleX(),.001f);
 +        activity.focused=true; t.onWindowFocusChanged(true); t.onPreDraw(); assertTrue(t.active); assertNotNull(t.chip.get());
 +    }
++    @Test public void invisibleWindowCannotBootstrapEvenWithStaleFocus() {
++        viewer.windowVisibility=View.GONE; FoldReels.Watcher.Tracker t=start(); assertFalse(t.active); assertNull(t.chip.get());
++        viewer.windowVisibility=View.VISIBLE; t.onPreDraw(); assertTrue(state(t),t.active); assertNotNull(t.chip.get());
++    }
 +    @Test public void knownPauseWinsOverStaleWindowFocusAndResumeRestores() {
 +        FoldReels.Watcher.Tracker t=start(); FoldReels.watcher.onActivityPaused(activity); t.onPreDraw();
 +        assertFalse(t.active); assertEquals(View.GONE,t.chip.get().getVisibility()); assertEquals(1,video.getScaleX(),.001f);
@@ -2420,12 +2424,33 @@ index 0000000..2d93ec7
 +        FoldReels.Watcher.Tracker t=start(); FoldReels.watcher.onActivityDestroyed(activity);
 +        assertTrue(FoldReels.watcher.trackers.isEmpty()); assertFalse(t.observersAttached); assertNull(t.chip.get()); assertNull(t.content.get()); assertTrue(t.viewers.isEmpty());
 +    }
++    @Test public void changedContentHostMovesOnlyTheShortcutAndKeepsOneObserver() {
++        FoldReels.Watcher.Tracker t=start(); TextView old=t.chip.get(); assertNotNull(state(t),old);
++        activity.reportedContent=body; t.onPreDraw();
++        assertNull(old.getParent()); assertSame(body,t.chip.get().getParent()); assertEquals(1,t.observerInstallations);
++        TextView replacement=t.chip.get(); t.onPreDraw(); assertSame(replacement,t.chip.get()); assertEquals(0,activity.recreations);
++    }
++    @Test public void uncertainScrimFailureDoesNotDisableThePlayerOrShortcut() {
++        FoldReels.Watcher.Tracker t=start();
++        View faulty=new View(activity) { @Override public android.graphics.drawable.Drawable getBackground() { throw new IllegalStateException("synthetic decorative failure"); } };
++        FoldReelsTestFixture.add(viewer,faulty,0,0,400,100); t.onGlobalLayout(); t.onPreDraw();
++        assertTrue(state(t),t.failures.containsKey("scrim")); assertFalse(t.failures.containsKey("renderer")); assertFalse(t.failures.containsKey("core"));
++        assertTrue(state(t),t.active); assertNotNull(t.chip.get()); assertTrue(video.getScaleX()>1); assertEquals(0,activity.recreations);
++    }
 +    public static class Host extends Activity {
-+        boolean focused=true, contentReady=true; int configurations, recreations;
++        boolean focused=true, contentReady=true; int configurations, recreations; FrameLayout reportedContent;
 +        @Override public boolean hasWindowFocus(){return focused;}
-+        @Override public <T extends View> T findViewById(int id){if(id==android.R.id.content&&!contentReady)return null;return super.findViewById(id);}
++        @SuppressWarnings("unchecked") @Override public <T extends View> T findViewById(int id){if(id==android.R.id.content){if(!contentReady)return null;if(reportedContent!=null)return (T)reportedContent;}return super.findViewById(id);}
 +        @Override public void onConfigurationChanged(Configuration c){configurations++;super.onConfigurationChanged(c);}
 +        @Override public void recreate(){recreations++;}
++    }
++    /** Window-manager input only. Robolectric API 29 leaves mWindowVisibility GONE
++     * in this headless Host despite visible(), attachment and a visible global rect.
++     * Layout, attachment, dispatch and the entire real FoldReels watcher stay unmocked. */
++    static final class WindowViewer extends FrameLayout {
++        int windowVisibility=View.VISIBLE;
++        WindowViewer(Activity activity){super(activity);}
++        @Override public int getWindowVisibility(){return windowVisibility;}
 +    }
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPreferencesTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPreferencesTest.java
@@ -2903,10 +2928,10 @@ index 0000000..626ba51
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsTestFixture.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsTestFixture.java
 new file mode 100644
-index 0000000..272e9df
+index 0000000..4e3ad1c
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsTestFixture.java
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,126 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2934,6 +2959,7 @@ index 0000000..272e9df
 +
 +/** Android view/gesture regression tests. No Instagram decoder or physical-display validation. */
 +abstract class FoldReelsTestFixture {
++    org.robolectric.android.controller.ActivityController<Activity> controller;
 +    Activity activity;
 +    FrameLayout content;
 +    TestViewer viewer;
@@ -2957,7 +2983,7 @@ index 0000000..272e9df
 +        child.layout(x, y, x + w, y + h);
 +    }
 +    @Before public void prepare() {
-+        activity = Robolectric.buildActivity(Activity.class).setup().visible().get();
++        controller = Robolectric.buildActivity(Activity.class).setup().visible(); activity = controller.get();
 +        content = new FrameLayout(activity); activity.setContentView(content);
 +        content.measure(View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY));
 +        content.layout(0, 0, 1000, 1600);
@@ -2967,6 +2993,9 @@ index 0000000..272e9df
 +            TextureView video = new TextureView(activity); add(page, video, 106, 0, 788, 1400);
 +            pages.add(page); videos.add(video);
 +        }
++    }
++    @org.junit.After public void cleanupWindow() {
++        controls.restore(); renderer.restore(); clipping.restore(); chrome.restore(); controller.pause().stop().destroy();
 +    }
 +    RectF fullViewport() { RectF out = bounds(viewer); out.bottom = out.top + 1600; return out; }
 +    void frame(RectF viewport, boolean crop) {
@@ -3040,7 +3069,7 @@ index 10591c8..fd72a92 100644
 -version = 3.9.0
 +version = 4.1.0
 diff --git a/patches/build.gradle.kts b/patches/build.gradle.kts
-index 4a17b30..5df2270 100644
+index 4a17b30..e9a3c29 100644
 --- a/patches/build.gradle.kts
 +++ b/patches/build.gradle.kts
 @@ -2,12 +2,12 @@ group = "crimera"
@@ -3061,6 +3090,19 @@ index 4a17b30..5df2270 100644
          license = "GNU General Public License v3.0"
      }
  }
+@@ -22,6 +22,12 @@ dependencies {
+ }
+ 
+ tasks {
++    register<JavaExec>("verifyFoldBundle") {
++        dependsOn("buildAndroid")
++        classpath = sourceSets["main"].runtimeClasspath
++        mainClass.set("app.morphe.util.VerifyFoldBundleKt")
++        args(project.version.toString())
++    }
+     register<JavaExec>("checkStringResources") {
+         description = "Checks resource strings for invalid formatting"
+ 
 diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
 new file mode 100644
 index 0000000..25614ed
@@ -3157,6 +3199,45 @@ index 0000000..25614ed
 +            """)
 +        }
 +    }
++}
+diff --git a/patches/src/main/kotlin/app/morphe/util/VerifyFoldBundle.kt b/patches/src/main/kotlin/app/morphe/util/VerifyFoldBundle.kt
+new file mode 100644
+index 0000000..11c79a7
+--- /dev/null
++++ b/patches/src/main/kotlin/app/morphe/util/VerifyFoldBundle.kt
+@@ -0,0 +1,33 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.morphe.util
++
++import app.morphe.patcher.patch.loadPatchesFromJar
++import com.google.gson.GsonBuilder
++import java.io.File
++import java.util.jar.JarFile
++
++/** Load the actual compiled bundle with Morphe's loader, before advertising it to Manager. */
++fun main(args: Array<String>) {
++    val bundle = File("build/libs").listFiles { file -> file.extension == "mpp" }!!.single()
++    val version = JarFile(bundle).use { it.manifest.mainAttributes.getValue("Version") }
++    check(version == args.single()) { "Bundle manifest version does not match Gradle" }
++    val patches = loadPatchesFromJar(setOf(bundle))
++    val fold = patches.single { it.name == "Adaptive Fold Reels" }
++    val instagram = fold.compatibility!!.single { it.packageName == "com.instagram.android" }
++    check(instagram.targets.single().version == "439.0.0.37.89")
++    check(instagram.targets.single().versionCodes!!.values.single() == 384510827)
++    check(fold.dependencies.isNotEmpty())
++    val list = patches.filter { it.name != null }.sortedBy { it.name }.map { patch ->
++        mapOf(
++            "name" to patch.name, "description" to patch.description, "default" to patch.default,
++            "compatiblePackages" to patch.compatibility?.map { compat ->
++                mapOf("packageName" to compat.packageName, "name" to compat.name,
++                    "apkFileType" to compat.apkFileType?.name,
++                    "targets" to compat.targets.map { target ->
++                        mapOf("version" to target.version, "versionCodes" to target.versionCodes?.mapKeys { it.key.name })
++                    })
++            })
++    }
++    File("../patches-list.json").writeText(GsonBuilder().setPrettyPrinting().create().toJson(mapOf("version" to version, "patches" to list)))
++    println("Morphe loader verified ${patches.size} patches, Adaptive Fold Reels and Instagram 439.0.0.37.89 / 384510827")
 +}
 diff --git a/patches/src/main/resources/addresources/values-fr-rFR/instagram/strings.xml b/patches/src/main/resources/addresources/values-fr-rFR/instagram/strings.xml
 index f49bffd..e349b17 100644

@@ -58,7 +58,7 @@ jobs:
         working-directory: upstream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew :extensions:instagram:testReleaseUnitTest buildAndroid --no-daemon --console=plain
+        run: ./gradlew :extensions:instagram:testReleaseUnitTest :patches:verifyFoldBundle --no-daemon --console=plain
 
       - name: Summarize Android view regression tests
         run: |
@@ -75,3 +75,15 @@ jobs:
                   raise SystemExit('Android regression scenarios did not all pass')
           PYTEST
 
+
+      - name: Inspect compiled bundle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          bundle = list(Path('upstream/patches/build/libs').glob('*.mpp'))
+          assert len(bundle) == 1
+          with ZipFile(bundle[0]) as z:
+              print(z.read('META-INF/MANIFEST.MF').decode())
+              print([n for n in z.namelist() if n.endswith(('.rve','.dex'))])
+          PY
