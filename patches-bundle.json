@@ -1,8 +1,8 @@
 {
-  "created_at": "2026-09-08T16:22:39",
-  "description": "Instagram : d\u00e9marrage imm\u00e9diat, commentaire seul, scrim plein \u00e9cran et m\u00e9tadonn\u00e9es compactes.",
-  "download_url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/PatchInsta-4.1.0.mpp",
+  "created_at": "2026-09-08T22:35:08",
+  "description": "Instagram : rattrapage au premier dessin, bandeau fixe, contour et calques de m\u00e9tadonn\u00e9es corrig\u00e9s.",
+  "download_url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/PatchInsta-4.1.1.mpp",
   "signature_download_url": null,
-  "page_url": "https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.0",
-  "version": "4.1.0"
+  "page_url": "https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.1",
+  "version": "4.1.1"
 }
