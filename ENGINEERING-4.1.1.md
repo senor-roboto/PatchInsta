@@ -26,7 +26,7 @@ Le diagnostic ajoute les bandes partagées détectées, leur maintien, les backg
 
 ## Vérification et publication
 
-Tests exigés avant publication : 76 scénarios Android (14 runtime, 18 lifecycle, 23 présentation, 5 scrim, 4 préférences, 12 régressions vidéo/overlays), 305 assertions géométrie/politique, 13 mappings et XML FR/EN, 9 tests de distribution. Les nouveaux scénarios couvrent Application Context, premier dessin sans constructeur, observateur perdu, vraie notification pre-draw, animations du header, clic natif, scrim du header, overlays frères, comptes suivis, caption spécialisée, séparation des pages et restauration du contour composite. Aucun scénario ignoré accepté.
+Tests exigés avant publication : 77 scénarios Android (14 runtime, 18 lifecycle, 23 présentation, 5 scrim, 4 préférences, 13 régressions vidéo/overlays), 305 assertions géométrie/politique, 13 mappings et XML FR/EN, 9 tests de distribution. Les nouveaux scénarios couvrent Application Context, premier dessin sans constructeur, observateur perdu, vraie notification pre-draw, animations du header, clic natif, scrim du header, overlays frères, comptes suivis, caption spécialisée, séparation des pages et restauration du contour composite. Aucun scénario ignoré accepté.
 
 La CI compile réellement le MPP, charge son patch avec le loader Morphe et vérifie la compatibilité annoncée. Cette opération ne remplace pas un patching de l’APKM ni une exécution sur Android 17/Samsung. L’extension est validée par des tests Android simulés.
 
