@@ -1,0 +1,95 @@
+{
+  "version": "4.1.0",
+  "initial_head": "3cf4b75e5fbc668469ac81df88320dedadbf84d1",
+  "resumed_head": "59c76b30ebf69ed77b1b40f056c3f62538531eb6",
+  "source_commit": "39c70bf3939fde09d89bc37188eae6f04ec989fd",
+  "feed_commit": "b6721af310a61bcb336c7ffc633370f0e79bd7b2",
+  "run": "https://github.com/senor-roboto/PatchInsta/actions/runs/34250207528",
+  "ci": "success",
+  "android_scenarios": 60,
+  "policy_geometry_checks": 305,
+  "distribution_tests": 6,
+  "exact_mapping_keys": 13,
+  "morphe_loaded_patches": 133,
+  "apk_patch_validation": false,
+  "device_validation": false,
+  "release": "https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.0",
+  "feed": {
+    "created_at": "2026-09-08T16:22:39",
+    "description": "Instagram : démarrage immédiat, commentaire seul, scrim plein écran et métadonnées compactes.",
+    "download_url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/PatchInsta-4.1.0.mpp",
+    "signature_download_url": null,
+    "page_url": "https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.0",
+    "version": "4.1.0"
+  },
+  "anonymous_source_access": false,
+  "reason": "Private repository: authenticated release downloads verified; Morphe cannot fetch the private source anonymously.",
+  "assets": [
+    {
+      "name": "build-info.json",
+      "bytes": 1467,
+      "digest": "sha256:1248f7773e8de0221efe397489c8376193618c2752e4aa22fcd0c256c3aad747",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/build-info.json"
+    },
+    {
+      "name": "CHANGELOG.md",
+      "bytes": 1131,
+      "digest": "sha256:eb886d0e968805421d00687b10e50257cb2e56ea325b335cc458fb7b682c7518",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/CHANGELOG.md"
+    },
+    {
+      "name": "GUIDE-FR.md",
+      "bytes": 7872,
+      "digest": "sha256:ead8a7ebb6d1014aad94fc97622eb5001239582136a7ac25edbe80824357aa5e",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/GUIDE-FR.md"
+    },
+    {
+      "name": "LICENSE",
+      "bytes": 35149,
+      "digest": "sha256:3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/LICENSE"
+    },
+    {
+      "name": "NOTICE",
+      "bytes": 231,
+      "digest": "sha256:1e05897eb4fc4076bef4bf5644a9fcfbcbe3cab8a73b3f283128dba4e22560e6",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/NOTICE"
+    },
+    {
+      "name": "patches-list.json",
+      "bytes": 60506,
+      "digest": "sha256:ae7a2efd380d4abdffe826a8a2abf89e3f430cee954d1c828f041dd9d04ae028",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/patches-list.json"
+    },
+    {
+      "name": "PatchInsta-4.1.0.mpp",
+      "bytes": 6802753,
+      "digest": "sha256:95f1d197be4a3bc5760c950a0dfca029b4c491f5844bd344a106d19b79744a7e",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/PatchInsta-4.1.0.mpp"
+    },
+    {
+      "name": "PatchInsta-4.1.0.zip",
+      "bytes": 6577215,
+      "digest": "sha256:67ecbeb233b1ff11773482c5cd8bff6d1736e77f92435328dd1021b3aed5078b",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/PatchInsta-4.1.0.zip"
+    },
+    {
+      "name": "piko-fold-reels.patch",
+      "bytes": 235064,
+      "digest": "sha256:c4b1e5e401a6a357941ca690fa83249151aa3822630b688eb1d961a03a7f8576",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/piko-fold-reels.patch"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 816,
+      "digest": "sha256:1f213b0ee6de72d4755f1f1588702520272f285bf0472d8d9f9b3c1fe524c4d7",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/SHA256SUMS.txt"
+    },
+    {
+      "name": "test-results.json",
+      "bytes": 343,
+      "digest": "sha256:fa60e5214a50d3ab368ea60bde04bf6ed5f268957471a759fd9d9d9e56e716dc",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.0/test-results.json"
+    }
+  ]
+}

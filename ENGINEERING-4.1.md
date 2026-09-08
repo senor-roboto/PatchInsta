@@ -1,5 +1,30 @@
 # Compte rendu technique — PatchInsta 4.1.0
 
+## Résultat publié
+
+**Release 4.1.0 publiée, CI entièrement réussie : [run 34250207528](https://github.com/senor-roboto/PatchInsta/actions/runs/34250207528).**
+
+- Commit du binaire : `39c70bf3939fde09d89bc37188eae6f04ec989fd`.
+- Commit de mise à jour du feed : `b6721af310a61bcb336c7ffc633370f0e79bd7b2`.
+- 60 scénarios Android réussis, aucun ignoré ; 305 assertions JVM ; 6 tests de distribution ; 13 mappings et ressources FR/EN validés.
+- Le loader Morphe a chargé les **133 patchs** du vrai `.mpp`, avec la cible Instagram attendue.
+- Les 11 assets de Release sont présents. Le ZIP et le MPP ont été téléchargés à nouveau et leurs octets vérifiés après upload.
+- L’accès anonyme de la source est **bloqué par le dépôt privé**, confirmé lors de la publication. Les téléchargements authentifiés GitHub fonctionnent. Aucune prétention de validation physique ou d’application du patch à un APKM.
+
+SHA-256 du `.mpp` :
+
+```text
+95f1d197be4a3bc5760c950a0dfca029b4c491f5844bd344a106d19b79744a7e
+```
+
+SHA-256 du ZIP :
+
+```text
+67ecbeb233b1ff11773482c5cd8bff6d1736e77f92435328dd1021b3aed5078b
+```
+
+[Relevé de vérification complet](VERIFICATION-4.1.0.json), avec tailles, hashes GitHub et URLs exactes. Le passage du dépôt en public reste nécessaire avant l’ajout distant dans Morphe ; les outils de cette session n’exposent pas ce réglage d’administration.
+
 ## Référence et portée
 
 Cahier des charges : `PROMPT_GPT6_PATCHINSTA.md`, lu intégralement, puis complément sur le scrim supérieur et le bloc auteur. Les captures sont des observations matérielles fournies par l’utilisateur ; les validations décrites ici sont celles du code et des tests. Aucun APKM, dump structurel du lecteur réel ni appareil Samsung n’est disponible dans cet environnement.
@@ -52,11 +77,11 @@ Les nouveaux tests ont trouvé et permis de corriger le chevauchement tactile in
 
 **N — Fichiers.** Le diff cumulatif contient les composants FoldReels, Controls, Chrome, Renderer, Policy, Preferences, Visibility, Metadata, CardChrome, Scrim et Diagnostics, les tests Android/JVM, les ressources FR/EN, le menu Piko, l’identité/version du bundle et le vérificateur de chargement Kotlin. Le kit ajoute `release.json`, `scripts/bundle.py`, `scripts/publish.py`, `scripts/test_distribution.py`, la CI, ce rapport, README, guide, changelog et notes de release. Aucun remplacement global des sources amont.
 
-**O — Historique d’intégration :** `59c76b3` (bootstrap/présentation), `7d9f76b` (scrim et métadonnées), `9c2bf51` (géométrie et tests), `a64b35b` (zones tactiles, lifecycle et chargement réel). Les derniers commits de livraison et la révision exacte du binaire sont traçables dans [l’historique](https://github.com/senor-roboto/PatchInsta/commits/main/) et `build-info.json`.
+**O — Historique d’intégration :** `59c76b3` (bootstrap/présentation), `7d9f76b` (scrim et métadonnées), `9c2bf51` (géométrie et tests), `a64b35b` (zones tactiles, lifecycle et chargement réel). `80a1ca1` prépare la distribution ; `39c70bf` corrige la récupération du brouillon et finalise le kit ; `b6721af` publie le feed. Les commits et la révision exacte du binaire sont traçables dans [l’historique](https://github.com/senor-roboto/PatchInsta/commits/main/) et `build-info.json`.
 
 **P — Version :** 4.1.0 ; nom de source **PatchInsta (Piko, unofficial)** ; nom de patch **Adaptive Fold Reels**. Ce numéro est celui du dérivé distribué, pas une prétendue version Piko amont 4.1.
 
-**Q / R — CI et preuves :** Les 60 scénarios, le build, le chargement des 133 patchs et la préparation des fichiers ont réussi dans le [run 34215073093](https://github.com/senor-roboto/PatchInsta/actions/runs/34215073093), avant correction de la récupération du brouillon de Release. Le run de publication définitif est enregistré dans les informations de compilation.  [workflow](https://github.com/senor-roboto/PatchInsta/actions/workflows/build-fold-reels.yml). `build-info.json` donne le run et le commit exacts ; `test-results.json` donne le décompte vérifié. La phase de build ne possède pas de droit d’écriture GitHub ; la phase de publication utilise le jeton normal du workflow après les tests. Elle relit les assets téléchargés, les compare aux sommes attendues, publie la Release puis avance le feed sans force-push. Un déplacement concurrent de main ou une version non incrémentée bloque une publication incohérente.
+**Q / R — CI et preuves :** Les 60 scénarios, le build, le chargement des 133 patchs et la préparation des fichiers ont réussi dans le [run 34215073093](https://github.com/senor-roboto/PatchInsta/actions/runs/34215073093), avant correction de la récupération du brouillon de Release. La chaîne complète réussit ensuite au run **34250207528**, référencé ci-dessus et dans les informations de compilation.  [workflow](https://github.com/senor-roboto/PatchInsta/actions/workflows/build-fold-reels.yml). `build-info.json` donne le run et le commit exacts ; `test-results.json` donne le décompte vérifié. La phase de build ne possède pas de droit d’écriture GitHub ; la phase de publication utilise le jeton normal du workflow après les tests. Elle relit les assets téléchargés, les compare aux sommes attendues, publie la Release puis avance le feed sans force-push. Un déplacement concurrent de main ou une version non incrémentée bloque une publication incohérente.
 
 | Référence | Livrable / URL durable |
 |---|---|
