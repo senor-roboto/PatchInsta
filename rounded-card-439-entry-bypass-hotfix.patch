@@ -1,0 +1,93 @@
+--- a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
++++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
+@@ -80,11 +80,8 @@
+         // post-children drawing, invisible to background/foreground inspection.
+         val rounded = mutableClassDefBy(ROUNDED_CARD)
+         val roundedDraw = rounded.methods.single { it.name == "dispatchDraw"
+             && it.parameterTypes == listOf("Landroid/graphics/Canvas;") && it.returnType == "V" }
+-        val helperRef = roundedCardHelper(roundedDraw, rounded.superclass!!)
+-        val helper = mutableClassDefBy(helperRef.definingClass).methods.single { it.name == helperRef.name
+-            && it.parameterTypes == helperRef.parameterTypes && it.returnType == helperRef.returnType }
+-        installRoundedCardHook(roundedDraw, rounded.superclass!!, helper)
++        installRoundedCardEntryBypass(roundedDraw, rounded.superclass!!)
+         var dispatch = viewerClass.methods.firstOrNull {
+             it.name == "dispatchTouchEvent" && it.parameterTypes == listOf("Landroid/view/MotionEvent;") && it.returnType == "Z"
+         }
+--- a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
++++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
+@@ -76,6 +76,44 @@
+     return target
+ }
+ 
++/** Instagram 439 has a full rounded/clipping dispatch with an R8 handler, not
++ * the old four-instruction helper call. Do not interpret that obfuscated CFG.
++ * Instead, when the already-scoped runtime lease asks for a clean cover card,
++ * jump to Instagram's own plain fallback: super.dispatchDraw(Canvas); return.
++ * Every unleased instance executes Instagram's original method byte-for-byte. */
++internal fun installRoundedCardEntryBypass(draw: MutableMethod, superclass: String) {
++    val body = requireNotNull(draw.implementation) { "Fold: rounded card has no draw implementation" }
++    val code = body.instructions.toList()
++    require(draw.definingClass == ROUNDED_CARD && draw.name == "dispatchDraw"
++            && draw.parameterTypes == listOf(CANVAS) && draw.returnType == "V"
++            && draw.accessFlags and AccessFlags.STATIC.value == 0) {
++        "Fold: unsupported RoundedCornerFrameLayout dispatchDraw identity"
++    }
++    val self = body.registerCount - 2
++    require(self > 0) { "Fold: RoundedCornerFrameLayout has no local register for entry guard" }
++    val fallback = code.withIndex().filter { (index, insn) ->
++        if (!isInvoke(insn.opcode, Opcode.INVOKE_SUPER, Opcode.INVOKE_SUPER_RANGE)) false
++        else {
++            val ref = (insn as? ReferenceInstruction)?.reference as? MethodReference
++            val next = code.drop(index + 1).firstOrNull { it.opcode != Opcode.NOP }
++            ref?.definingClass == superclass && ref.name == "dispatchDraw"
++                && ref.parameterTypes == listOf(CANVAS) && ref.returnType == "V"
++                && invokeRegisters(insn) == listOf(self, self + 1)
++                && next?.opcode == Opcode.RETURN_VOID
++        }
++    }
++    require(fallback.size == 1) {
++        "Fold: RoundedCornerFrameLayout plain dispatch fallback changed; " +
++            "candidates=${fallback.size}; opcodes=${code.map { it.opcode }}"
++    }
++    draw.addInstructionsWithLabels(0, """
++        invoke-static/range {p0 .. p0}, Lapp/morphe/extension/instagram/patches/reels/FoldReels;->skipRoundedCardDecoration(Landroid/view/View;)Z
++        move-result v0
++        if-nez v0, :fold_plain_rounded_dispatch
++    """, app.morphe.patcher.util.smali.ExternalLabel(
++        "fold_plain_rounded_dispatch", fallback.single().value))
++}
++
+ internal fun installRoundedCardHook(draw: MutableMethod, superclass: String, helper: Method) {
+     val ref = roundedCardHelper(draw, superclass)
+     require(helper.definingClass == ref.definingClass && helper.name == ref.name
+--- a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
++++ b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
+@@ -47,6 +47,20 @@
+             "invoke-virtual {v0, v2}, $painter->differentName(Landroid/graphics/Canvas;)V","nop","return-void")
+         assertNotNull(roundedCardHelper(draw, superclass))
+     }
++    @Test fun productionEntryBypassTargetsOnlyThePlainSuperReturnFallback() {
++        val draw=method(ROUNDED_CARD,"dispatchDraw",5,
++            "const/4 v0, 0",
++            "invoke-super/range {v3 .. v4}, $superclass->dispatchDraw(Landroid/graphics/Canvas;)V",
++            "const/4 v1, 1",
++            "invoke-super/range {v3 .. v4}, $superclass->dispatchDraw(Landroid/graphics/Canvas;)V",
++            "return-void")
++        installRoundedCardEntryBypass(draw, superclass)
++        val code=draw.implementation!!.instructions.toList()
++        assertEquals(Opcode.INVOKE_STATIC_RANGE, code[0].opcode)
++        assertEquals(Opcode.MOVE_RESULT, code[1].opcode)
++        assertEquals(Opcode.IF_NEZ, code[2].opcode)
++        assertEquals(2, code.count { it.opcode == Opcode.INVOKE_SUPER_RANGE })
++    }
+     @Test fun rejectsUnexpectedDispatchWithoutPartiallyMutatingIt() {
+         val draw=draw("invoke-virtual {v1, v2}, $painter->differentName(Landroid/graphics/Canvas;)V")
+         try { installRoundedCardHook(draw, superclass, helper()); fail("wrong receiver accepted") } catch (_: IllegalArgumentException) {}
+--- a/gradle.properties
++++ b/gradle.properties
+@@ -2,4 +2,4 @@
+ org.gradle.caching = true
+ kotlin.code.style = official
+ android.useAndroidX = true
+-version = 4.1.5
++version = 4.1.6
