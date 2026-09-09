@@ -47,7 +47,7 @@ Le seul point d’entrée natif précisément connu dans le patch reste `instagr
 
 ## Donnée nécessaire pour poursuivre sans une nouvelle correction à l’aveugle
 
-La 4.1.2 installée possède déjà un export structurel : appui long sur **Entière / Remplir** → **Diagnostic du lecteur** → **Copier**. Envoyer le texte complet, de préférence en fichier texte. L’export n’inclut pas les captions, noms de compte, médias, tags ni descriptions d’accessibilité.
+La 4.1.2 installée possède déjà un export structurel : appui long sur **Entière / Remplir** → **Options avancées** → **Diagnostic du lecteur** → **Copier**. Envoyer le texte complet, de préférence en fichier texte. L’export n’inclut pas les captions, noms de compte, médias, tags ni descriptions d’accessibilité.
 
 Premier relevé : écran externe, mode Plein écran propre, sur un Réel où le rectangle est visible, sans recharger le lecteur. Deuxième relevé : fermer les dialogues, faire un swipe normal, rouvrir le diagnostic. Conserver les en-têtes `tracker`, `profile`, `spaces`, `renderer`, `card`, `scrim`, `header`, `metadata`, `failures` et la hiérarchie.
 
