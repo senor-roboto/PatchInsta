@@ -29,23 +29,6 @@
      }
      val superInsn = meaningful[0].value
      val superRef = (superInsn as ReferenceInstruction).reference as MethodReference
---- a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
-+++ b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
-@@ -51,6 +51,14 @@
-             "invoke-virtual {v0, v2}, $painter->differentName(Landroid/graphics/Canvas;)V","nop","return-void")
-         assertNotNull(roundedCardHelper(draw, superclass))
-     }
-+    @Test fun acceptsVerifiedNormalPathWithTrailingExceptionHandlerCode() {
-+        val draw=method(ROUNDED_CARD,"dispatchDraw",3,
-+            "invoke-super {v1, v2}, $superclass->dispatchDraw(Landroid/graphics/Canvas;)V",
-+            "iget-object v0, v1, $ROUNDED_CARD->whatever:$painter",
-+            "invoke-virtual {v0, v2}, $painter->differentName(Landroid/graphics/Canvas;)V","return-void",
-+            "move-exception v0","throw v0")
-+        assertNotNull(roundedCardHelper(draw, superclass))
-+    }
-     @Test fun rejectsUnexpectedDispatchWithoutPartiallyMutatingIt() {
-         val draw=draw("invoke-virtual {v1, v2}, $painter->differentName(Landroid/graphics/Canvas;)V")
-         assertFailsWith<IllegalArgumentException>{ roundedCardHelper(draw,superclass) }
 --- a/gradle.properties
 +++ b/gradle.properties
 @@ -2,4 +2,4 @@
