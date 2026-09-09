@@ -1,11 +1,10 @@
-# 4.1.3
+# 4.1.4
 
-- Traite le masque de coins et le stroke dessinés après les enfants par `RoundedCornerFrameLayout`, en plus des backgrounds/foregrounds : contrôle strict du bytecode natif lors du patchage ; suppression limitée aux wrappers de players réellement transformés en cover.
-- Restauration sans écriture des Paint/radii/helpers natifs, avec invalidation des display lists à l’entrée et à la sortie ; players, enfants et listeners restent natifs.
-- Scrims : hauteur de fondu native, ancrage haut/bas et largeur du viewport ; suivi des remplacements et modifications de couleurs natives. Reconnaissance explicite du `ClipsViewerActionBar` observé.
-- Diagnostic figé avant les dialogues (corrige le relevé `not-presentable` après cold start), chemins players prioritaires, vues nulles/GONE omises, identités d’instances, compteurs d’exécution et export `.txt`.
-- Metadata : refuse les branches social context/facepile et l’identité déduite seulement d’un avatar générique et d’un texte cliquable. Les structures incertaines restent natives.
-- Gates attendus : 113 scénarios Android, 5 tests du garde bytecode, 305 assertions JVM, 13 mappings FR/EN et 14 tests de distribution ; build et chargement réels du MPP. Aucun résultat pixel Samsung ni patchage de l’APKM 439 revendiqué sans preuve.
+- Corrige le refus de patchage 4.1.3 sur Instagram 439.0.0.37.89 lorsque D8/R8 encode `RoundedCornerFrameLayout.dispatchDraw` avec les variantes d’instructions `/range` ou du padding `nop`.
+- Le garde reste strict : il exige toujours `super.dispatchDraw(Canvas)`, le chargement du helper natif, l’appel du helper avec le même `Canvas`, puis `return-void`; aucun bypass aveugle n’est accepté.
+- Les registres, le type du helper et son contrat de dessin `Canvas.drawPath(Path, Paint)` restent vérifiés avant injection.
+- Le message d’échec inclut désormais les opcodes observés si la forme réelle diffère encore, afin d’obtenir un diagnostic exploitable au lieu d’un refus générique.
+- Deux tests bytecode supplémentaires couvrent `invoke-super/range` et le padding `nop`; le bundle de distribution inclut explicitement le hotfix appliqué en plus du patch source principal.
+- Cette version corrige d’abord la compatibilité du patchage. Le résultat visuel du retrait du cadre natif doit toujours être validé sur le Galaxy Z Fold 8 réel.
 
-
-Mettre à jour la même source Morphe, repatcher l’APKM original compatible et installer avec le même package et la même signature.
+Mettre à jour la même source Morphe, repatcher l’APKM original 439.0.0.37.89 arm64-v8a et installer avec le même package et la même signature.
