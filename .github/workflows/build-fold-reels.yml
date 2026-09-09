@@ -2,7 +2,7 @@ name: Build, verify and release PatchInsta
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci/fold-native-painter]
     paths:
       - piko-fold-reels.patch
       - release.json
@@ -87,6 +87,7 @@ jobs:
           retention-days: 14
 
   release:
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
