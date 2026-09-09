@@ -5,6 +5,7 @@ on:
     branches: [main, ci/fold-native-painter]
     paths:
       - piko-fold-reels.patch
+      - rounded-card-439-hotfix.patch
       - release.json
       - scripts/**
       - .github/workflows/build-fold-reels.yml
@@ -44,6 +45,8 @@ jobs:
           PY
           git -C upstream apply --check ../piko-fold-reels.patch
           git -C upstream apply ../piko-fold-reels.patch
+          git -C upstream apply --check ../rounded-card-439-hotfix.patch
+          git -C upstream apply ../rounded-card-439-hotfix.patch
           git -C upstream diff --check
       - name: Set up Java 17
         uses: actions/setup-java@v4
