@@ -33,7 +33,7 @@ index 43dd2c8..7f08a55 100644
 +
  /** Verify the actual APK, not obfuscated helper names copied from another Instagram build.
 - * Only super.dispatchDraw; load helper; helper.draw(Canvas); return is accepted.
-+ * Accept both normal and /range invoke encodings emitted by D8/R8. The semantic contract
++ * Accept normal and /range invoke encodings emitted by D8/R8. The semantic contract
 + * remains super.dispatchDraw; load this.helper; helper.draw(Canvas); return.
   * Never skip super.dispatchDraw (the native player, metadata and listeners). */
  internal fun roundedCardHelper(draw: Method, superclass: String): MethodReference {
@@ -107,26 +107,21 @@ diff --git a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/Ro
 index f4cb8ab..8b0e7fb 100644
 --- a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
 +++ b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
-@@ -27,6 +27,17 @@ class RoundedCardHookTest {
+@@ -27,6 +27,11 @@ class RoundedCardHookTest {
          "invoke-virtual {v4, v0, v1}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V",
          extra ?: "invoke-virtual {v4, v0, v1}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V", "return-void")
 +    private fun rangeDraw() = method(ROUNDED_CARD, "dispatchDraw", 3,
 +        "invoke-super/range {v1 .. v2}, $superclass->dispatchDraw(Landroid/graphics/Canvas;)V",
 +        "iget-object v0, v1, $ROUNDED_CARD->whatever:$painter",
-+        "invoke-virtual/range {v0 .. v2}, $painter->differentName(Landroid/graphics/Canvas;)V", "return-void")
-+    private fun rangeHelper() = method(painter, "differentName", 6,
-+        "iget-object v0, v3, $painter->path:Landroid/graphics/Path;",
-+        "iget-object v1, v3, $painter->paint:Landroid/graphics/Paint;",
-+        "invoke-virtual/range {v4 .. v5}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V",
-+        "invoke-virtual/range {v4 .. v5}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V", "return-void")
++        "invoke-virtual {v0, v2}, $painter->differentName(Landroid/graphics/Canvas;)V", "return-void")
      @Test fun preservesChildrenAndGuardsOnlyVerifiedDecorationRegardlessOfHelperName() {
          val draw = draw(); installRoundedCardHook(draw, superclass, helper())
          val code=draw.implementation!!.instructions.toList()
-@@ -36,6 +47,11 @@ class RoundedCardHookTest {
+@@ -36,6 +41,11 @@ class RoundedCardHookTest {
          assertEquals(Opcode.IGET_OBJECT,code[6].opcode)
          assertEquals(Opcode.INVOKE_VIRTUAL,code[7].opcode)
      }
-+    @Test fun acceptsRangeEncodedDispatchFromD8R8() {
++    @Test fun acceptsRangeEncodedSuperDispatchFromD8R8() {
 +        assertNotNull(roundedCardHelper(rangeDraw(), superclass))
 +    }
 +    @Test fun toleratesNoOpPaddingAroundTheVerifiedFourInstructionContract() {
