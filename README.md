@@ -1,8 +1,8 @@
 # PatchInsta
 
-**Adaptive Fold Reels**, dérivé non officiel de **Piko 3.9.0**, pour adapter les Réels Instagram aux deux écrans du Galaxy Z Fold. Bundle **4.1.2** ; le nom de la source et celui du patch restent identiques lors des prochaines mises à jour.
+**Adaptive Fold Reels**, dérivé non officiel de **Piko 3.9.0**, pour adapter les Réels Instagram aux deux écrans du Galaxy Z Fold. Bundle **4.1.3** ; le nom de la source et celui du patch restent identiques lors des prochaines mises à jour.
 
-**Retour appareil après 4.1.2 : le défaut de card/contraste en cover reste ouvert.** Les nouvelles captures ne montrent pas d’amélioration visuelle nette par rapport à 4.1.1. Les gates techniques sont verts, mais l’origine des traits dans la hiérarchie native reste à identifier. [Investigation et relevé nécessaire](DEVICE-INVESTIGATION.md).
+**4.1.3 cible le dessin natif des coins/contours, absent des détecteurs 4.1.2.** Les gradients gardent leur distance de fondu et le diagnostic est capturé avant les dialogues, puis exportable en `.txt`. Le rendu Samsung reste à confirmer sur appareil. [Preuves et limites](ENGINEERING-4.1.3.md).
 
 Cible : **Instagram 439.0.0.37.89**, APKM original, **arm64-v8a / versionCode 384510827**. Aucun APK Instagram n’est distribué.
 
@@ -14,9 +14,9 @@ Cible : **Instagram 439.0.0.37.89**, APKM original, **arm64-v8a / versionCode 38
 https://github.com/senor-roboto/PatchInsta
 ```
 
-[JSON de la source](https://raw.githubusercontent.com/senor-roboto/PatchInsta/main/patches-bundle.json) · [Dernière Release](https://github.com/senor-roboto/PatchInsta/releases/latest) · [Guide français](GUIDE-FR.md) · [Analyse et limites](ENGINEERING-4.1.2.md)
+[JSON de la source](https://raw.githubusercontent.com/senor-roboto/PatchInsta/main/patches-bundle.json) · [Dernière Release](https://github.com/senor-roboto/PatchInsta/releases/latest) · [Guide français](GUIDE-FR.md) · [Analyse et limites](ENGINEERING-4.1.3.md)
 
-Le dépôt est désormais public. Si PatchInsta est déjà ajouté dans Morphe, **actualiser cette même source vers 4.1.2**, repatcher l’APKM original et installer par-dessus. Aucun nouvel import de source n’est nécessaire.
+Le dépôt est désormais public. Si PatchInsta est déjà ajouté dans Morphe, **actualiser cette même source vers 4.1.3**, repatcher l’APKM original et installer par-dessus. Aucun nouvel import de source n’est nécessaire.
 
 ## Première installation / migration depuis la v4 locale
 
@@ -48,7 +48,7 @@ Le package et la signature doivent rester identiques. Réinstaller Morphe sans r
 
 ## Téléchargement manuel durable
 
-[PatchInsta-4.1.2.mpp](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/PatchInsta-4.1.2.mpp) · [PatchInsta-4.1.2.zip](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/PatchInsta-4.1.2.zip) · [SHA-256](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/SHA256SUMS.txt)
+[PatchInsta-4.1.3.mpp](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.3/PatchInsta-4.1.3.mpp) · [PatchInsta-4.1.3.zip](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.3/PatchInsta-4.1.3.zip) · [SHA-256](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.3/SHA256SUMS.txt)
 
 Les fichiers de Release sont durables. Les artefacts Actions servent uniquement au transfert et au diagnostic de CI.
 

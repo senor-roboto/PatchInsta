@@ -75,6 +75,7 @@ jobs:
           path: |
             upstream/extensions/instagram/build/test-results/testReleaseUnitTest/
             upstream/extensions/instagram/build/reports/tests/testReleaseUnitTest/
+            upstream/patches/build/test-results/test/
             output/test-results.json
           retention-days: 14
       - name: Transfer verified release files

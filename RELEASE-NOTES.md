@@ -1,16 +1,11 @@
-PatchInsta 4.1.2 corrige la géométrie des décorations reconnues en cover fullscreen après les retours de la 4.1.1.
+# 4.1.3
 
-- La vidéo et le contraste utilisent les limites de la fenêtre, même si le contenu Android conserve d’anciens insets. Les vues interactives gardent leur espace natif sûr.
-- Les scrims inférieurs sont pris en charge, ainsi que les gradients de grande card et les foregrounds. Les composites de contraste suivent le viewport complet au lieu de perdre seulement leur stroke.
-- Chaque décoration suit la même page et le même déplacement que son player pendant le swipe. Les dessins restent dans leur couche native, sans ajouter de rectangle sombre ni reparenting des commandes.
-- Dessin privé et réversible, contrôle du clipping jusqu’à la fenêtre, restauration au changement de profil/détachement/remplacement natif. Diagnostic structurel enrichi pour identifier les variantes restantes.
+- Traite le masque de coins et le stroke dessinés après les enfants par `RoundedCornerFrameLayout`, en plus des backgrounds/foregrounds : contrôle strict du bytecode natif lors du patchage ; suppression limitée aux wrappers de players réellement transformés en cover.
+- Restauration sans écriture des Paint/radii/helpers natifs, avec invalidation des display lists à l’entrée et à la sortie ; players, enfants et listeners restent natifs.
+- Scrims : hauteur de fondu native, ancrage haut/bas et largeur du viewport ; suivi des remplacements et modifications de couleurs natives. Reconnaissance explicite du `ClipsViewerActionBar` observé.
+- Diagnostic figé avant les dialogues (corrige le relevé `not-presentable` après cold start), chemins players prioritaires, vues nulles/GONE omises, identités d’instances, compteurs d’exécution et export `.txt`.
+- Metadata : refuse les branches social context/facepile et l’identité déduite seulement d’un avatar générique et d’un texte cliquable. Les structures incertaines restent natives.
+- Gates attendus : 113 scénarios Android, 5 tests du garde bytecode, 305 assertions JVM, 13 mappings FR/EN et 14 tests de distribution ; build et chargement réels du MPP. Aucun résultat pixel Samsung ni patchage de l’APKM 439 revendiqué sans preuve.
 
-Aucun changement de player, de listeners natifs, de flags MobileConfig par défaut, de cold-start hook ni de politique de rechargement.
 
-**Morphe :** actualiser la source PatchInsta existante vers **4.1.2**, repatcher l’APKM original **439.0.0.37.89 / arm64-v8a / 384510827**, puis installer par-dessus avec le même package Clone et le même keystore. Mettre à jour le bundle seul ne modifie pas l’APK installé.
-
-Gates de publication : 98 scénarios Android dont 4 tests de dessin Canvas/Skia, 305 assertions JVM, 13 mappings FR/EN et 14 tests de distribution ; compilation réelle du MPP, chargement Morphe, contrôle du ZIP et des téléchargements publics par SHA-256.
-
-**Limite de preuve :** les captures montrent l’ancienne géométrie, mais n’identifient pas les classes/drawables natifs qui dessinent chaque trait. Les défauts de code corrigés et les tests synthétiques ne prouvent pas que tous les traits Samsung ont disparu. Aucun test matériel ni patching local de l’APKM propriétaire n’est revendiqué. Les décorations inconnues restent natives et sont décrites dans le diagnostic.
-
-Consulter GUIDE-FR.md et ENGINEERING-4.1.2.md dans le dépôt, puis build-info.json / test-results.json dans cette Release.
+Mettre à jour la même source Morphe, repatcher l’APKM original compatible et installer avec le même package et la même signature.
