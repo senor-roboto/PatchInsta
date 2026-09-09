@@ -1,5 +1,11 @@
 # PatchInsta 4.1.2 — géométrie du contraste plein écran
 
+## Résultat technique et retour appareil
+
+[CI 34317648473](https://github.com/senor-roboto/PatchInsta/actions/runs/34317648473) verte, Release 4.1.2 publiée le 9 septembre 2026 depuis `5bbdd8de6f767ebf0d72d43648287cc12b27c22b`, feed `75ba8f78651714509e49298f2f0c6d931a46b8e7`. MPP chargé par Morphe, assets et téléchargement anonyme vérifiés. [Preuves](VERIFICATION-4.1.2.json).
+
+**Les nouveaux essais réels invalident toutefois l’objectif visuel principal : la card fantôme et ses limites restent présentes.** Les défauts de code décrits ci-dessous étaient réels, mais leur correction n’a pas démontré un effet sur les objets natifs qui dessinent les traits du Fold. Voir [l’investigation après 4.1.2](DEVICE-INVESTIGATION.md). Aucune validation de pixels Samsung n’est revendiquée.
+
 ## Point de départ et preuves
 
 HEAD réellement relu : `9b3046e807d53ed412b07c52e82d41c62b706c1d`, dernière Release 4.1.1. Le blob du patch local et distant correspondait : `99b8f258e976f74e1b0544214721b1abd6bd1120`. Piko reste épinglé à `50744aa07bb41c4e1f942a06614ef4e6f2e3610c`. Aucune reconstruction du projet depuis zéro.
@@ -57,7 +63,7 @@ Les tests nouveaux couvrent : contenu en retrait, fenêtre redimensionnée/dépl
 
 La CI compile réellement le `.mpp`, charge les patchs avec Morphe, vérifie le manifeste et l’extension DEX puis le ZIP et les checksums. La publication n’a lieu qu’après réussite, sur la source existante ; les assets sont téléchargés et vérifiés à nouveau, puis l’URL anonyme stable et le MPP sont relus.
 
-**Statut au commit de préparation : en attente de CI finale et de publication.** Le premier run a exécuté les 98 scénarios : 97 réussis, dont les quatre rasterisations ; une assertion de la nouvelle fixture cold start attendait à tort les 16 pixels du viewer situés hors fenêtre. Elle vérifie maintenant explicitement la limitation à la fenêtre. Le code de production effectuait déjà correctement cette limitation. Les preuves et URLs exactes seront consignées après exécution. Les tests locaux JVM/mappings/distribution sont verts ; aucun build Android local n’est revendiqué.
+**Historique avant publication.** Le premier run a exécuté les 98 scénarios : 97 réussis, dont les quatre rasterisations ; une assertion de la nouvelle fixture cold start attendait à tort les 16 pixels du viewer situés hors fenêtre. Elle vérifie maintenant explicitement la limitation à la fenêtre. Le code de production effectuait déjà correctement cette limitation. Les preuves et URLs exactes sont maintenant consignées dans VERIFICATION-4.1.2.json. Les tests locaux JVM/mappings/distribution sont verts ; aucun build Android local n’est revendiqué.
 
 ## Vérification matérielle restante
 

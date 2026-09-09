@@ -2,6 +2,8 @@
 
 **Adaptive Fold Reels**, dérivé non officiel de **Piko 3.9.0**, pour adapter les Réels Instagram aux deux écrans du Galaxy Z Fold. Bundle **4.1.2** ; le nom de la source et celui du patch restent identiques lors des prochaines mises à jour.
 
+**Retour appareil après 4.1.2 : le défaut de card/contraste en cover reste ouvert.** Les nouvelles captures ne montrent pas d’amélioration visuelle nette par rapport à 4.1.1. Les gates techniques sont verts, mais l’origine des traits dans la hiérarchie native reste à identifier. [Investigation et relevé nécessaire](DEVICE-INVESTIGATION.md).
+
 Cible : **Instagram 439.0.0.37.89**, APKM original, **arm64-v8a / versionCode 384510827**. Aucun APK Instagram n’est distribué.
 
 ## Ajouter PatchInsta à Morphe

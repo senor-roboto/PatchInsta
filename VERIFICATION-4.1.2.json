@@ -1,0 +1,86 @@
+{
+  "android_scenarios": 98,
+  "anonymous_access": true,
+  "assets": [
+    {
+      "bytes": 1568,
+      "digest": "sha256:171e6f4519504c83085040cdad282607d8b790760377d4000385645fe9bc2173",
+      "name": "build-info.json",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/build-info.json"
+    },
+    {
+      "bytes": 2635,
+      "digest": "sha256:eafb9e7b45f47f06bf123be1fd01248fe4491f2b1e590896790d5264cb072919",
+      "name": "CHANGELOG.md",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/CHANGELOG.md"
+    },
+    {
+      "bytes": 8304,
+      "digest": "sha256:50e94192574b2d9cf4325438f35b1ffe51f0c04203459f11a58018bf8da5b704",
+      "name": "GUIDE-FR.md",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/GUIDE-FR.md"
+    },
+    {
+      "bytes": 35149,
+      "digest": "sha256:3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+      "name": "LICENSE",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/LICENSE"
+    },
+    {
+      "bytes": 231,
+      "digest": "sha256:1e05897eb4fc4076bef4bf5644a9fcfbcbe3cab8a73b3f283128dba4e22560e6",
+      "name": "NOTICE",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/NOTICE"
+    },
+    {
+      "bytes": 60506,
+      "digest": "sha256:40bb5dddf991830f1f651b72593c5319c380510b98e8847e300e7c1a85c7b0a9",
+      "name": "patches-list.json",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/patches-list.json"
+    },
+    {
+      "bytes": 6814949,
+      "digest": "sha256:b7e918158067b43ff3582084d8fb953ca8bcbf3f64dd3ad0cb4faa306bf6f892",
+      "name": "PatchInsta-4.1.2.mpp",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/PatchInsta-4.1.2.mpp"
+    },
+    {
+      "bytes": 6606567,
+      "digest": "sha256:d035a8becf6e35755a95117db9dc6b76206ec1730abc176cc9e0c5ed707e99d5",
+      "name": "PatchInsta-4.1.2.zip",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/PatchInsta-4.1.2.zip"
+    },
+    {
+      "bytes": 315664,
+      "digest": "sha256:e52149fd752341625660cdf4fc80153c6ca82afac5b99deefdba442272dfc4cb",
+      "name": "piko-fold-reels.patch",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/piko-fold-reels.patch"
+    },
+    {
+      "bytes": 816,
+      "digest": "sha256:25ce9f330414bd7f1720dc3521fab628e12203637ff37d4da2d7024626da7a75",
+      "name": "SHA256SUMS.txt",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/SHA256SUMS.txt"
+    },
+    {
+      "bytes": 438,
+      "digest": "sha256:08db9818b708f0be9ad4745a2cb768d775b8840d8cfd60c7bb24db0324b03d16",
+      "name": "test-results.json",
+      "url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/test-results.json"
+    }
+  ],
+  "ci_conclusion": "success",
+  "device_feedback": "Latest user screenshots show that the main cover card/contrast defect remains. Exact native drawing objects have not been identified from a device hierarchy.",
+  "device_visual_fix_confirmed": false,
+  "distribution_tests": 14,
+  "feed_commit": "75ba8f78651714509e49298f2f0c6d931a46b8e7",
+  "mapping_keys": 13,
+  "morphe_loaded_patches": 133,
+  "policy_geometry_assertions": 305,
+  "published_at": "2026-09-09T06:10:09Z",
+  "release": "https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.2",
+  "run_url": "https://github.com/senor-roboto/PatchInsta/actions/runs/34317648473",
+  "source_commit": "5bbdd8de6f767ebf0d72d43648287cc12b27c22b",
+  "source_url": "https://raw.githubusercontent.com/senor-roboto/PatchInsta/main/patches-bundle.json",
+  "version": "4.1.2"
+}
