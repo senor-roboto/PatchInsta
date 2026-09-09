@@ -1,3 +1,12 @@
+# 4.1.6
+
+- Corrige le troisième refus observé sur le vrai Instagram `439.0.0.37.89`. Le log 4.1.5 prouve que `RoundedCornerFrameLayout.dispatchDraw(Canvas)` possède désormais un CFG complet avec clipping, appels d’interface et handler R8 ; les anciens matchers « quatre instructions » sont donc abandonnés pour la production.
+- Le hook 4.1.6 ne devine plus le helper obfusqué. Il repère uniquement le chemin de repli natif déjà présent dans le vrai `dispatchDraw` : un `super.dispatchDraw(Canvas)` utilisant `this` et le même `Canvas`, immédiatement suivi du retour.
+- Quand le lease cover existant demande la suppression de la card, l’entrée de `dispatchDraw` branche vers ce repli natif. Les enfants restent dessinés par la superclass, tandis que le clipping/stroke propre au `RoundedCornerFrameLayout` est évité. Hors lease, Instagram reprend son premier opcode original et exécute son code natif inchangé.
+- Le hook exige exactement un fallback `super + return` cohérent avec les registres et la superclass. Si cette structure disparaît dans une future version, le patch refuse au lieu de sauter vers un bloc ambigu.
+- La portée runtime reste inchangée : uniquement les wrappers `RoundedCornerFrameLayout` reliés aux players réellement transformés sur l’écran cover ; interne, fit, désactivation, detach et recyclage reviennent au dessin Instagram natif.
+- Ajoute un test bytecode du fallback et conserve les scénarios Android, contrôles de bundle, compilation et chargement MPP. Le résultat visuel final reste à confirmer sur le Galaxy Z Fold 8 réel.
+
 # 4.1.5
 
 - Corrige le second refus observé sur le vrai Instagram `439.0.0.37.89` après la 4.1.4 : le garde échouait avant même la vérification des opcodes, au niveau du contrat de méthode `dispatchDraw`.
