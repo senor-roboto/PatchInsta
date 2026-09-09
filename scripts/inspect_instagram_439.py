@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Print the exact DEX shape of Instagram's RoundedCornerFrameLayout drawing path.
 
-This is a branch-only investigation helper. It intentionally prints method/field operands,
-registers, try blocks and nearby helper bodies so the production patch can match semantics
-instead of guessing from opcode names.
+Branch-only investigation helper. It deliberately parses DEX directly (no global xref
+analysis) so a 150 MB APK finishes quickly, while still exposing exact operands,
+registers, try blocks, field types, and Canvas helpers.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-from androguard.misc import AnalyzeAPK
+from androguard.core.apk import APK
+from androguard.core.dex import DEX
 
 TARGET = "Lcom/instagram/ui/widget/roundedcornerlayout/RoundedCornerFrameLayout;"
 
@@ -54,22 +55,25 @@ def dump_method(method, label):
         off += ins.get_length()
 
 
+def find_class(dexes, descriptor):
+    for dex in dexes:
+        for cls in dex.get_classes():
+            if cls.get_name() == descriptor:
+                return dex, cls
+    return None, None
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: inspect_instagram_439.py APK")
-    apk = Path(sys.argv[1])
-    print("apk=", apk, "size=", apk.stat().st_size)
-    _, dexes, _ = AnalyzeAPK(str(apk))
-    target_class = None
-    target_dex = None
-    for dex in dexes:
-        for cls in dex.get_classes():
-            if cls.get_name() == TARGET:
-                target_class = cls
-                target_dex = dex
-                break
-        if target_class is not None:
-            break
+    apk_path = Path(sys.argv[1])
+    print("apk=", apk_path, "size=", apk_path.stat().st_size)
+    apk = APK(str(apk_path))
+    raw_dexes = list(apk.get_all_dex())
+    print("dex_count=", len(raw_dexes))
+    dexes = [DEX(raw) for raw in raw_dexes]
+
+    target_dex, target_class = find_class(dexes, TARGET)
     if target_class is None:
         raise SystemExit(f"missing {TARGET}")
     print("target superclass=", target_class.get_superclassname())
@@ -79,47 +83,30 @@ def main():
     draw = methods[0]
     dump_method(draw, "RoundedCornerFrameLayout.dispatchDraw")
 
-    # Resolve every non-framework method referenced from dispatchDraw. Dumping these bodies
-    # reveals which invoke actually performs the corner/stroke paint and which invokes are
-    # tracing/cleanup/finally machinery that must stay intact.
-    refs = []
-    for ins in draw.get_code().get_bc().get_instructions():
-        name = ins.get_name()
-        text = output(ins)
-        if name.startswith("invoke-") and "->" in text:
-            refs.append(text)
     print("\n=== invoke operands (ordered) ===")
-    for r in refs:
-        print(r)
+    for ins in draw.get_code().get_bc().get_instructions():
+        if ins.get_name().startswith("invoke-"):
+            print(f"{ins.get_name():<28} {output(ins)}")
 
-    # Androguard's textual operand is enough to find the exact class/name/descriptor again.
-    # Dump all methods of direct object-field classes referenced by the target class that take
-    # Canvas; this gives us a stable semantic painter candidate even if names are obfuscated.
     field_types = set()
+    print("\n=== target fields ===")
     for field in target_class.get_fields():
-        try:
-            field_types.add(field.get_descriptor())
-        except Exception:
-            pass
-    print("\n=== target field types ===")
-    for t in sorted(field_types):
-        print(t)
+        desc = field.get_descriptor()
+        field_types.add(desc)
+        print(field.get_name(), desc)
+
+    # Dump Canvas-taking methods on direct object-field classes. This identifies the rounded
+    # painter by behavior, not by an obfuscated symbol name.
     for desc in sorted(field_types):
         if not (desc.startswith("L") and desc.endswith(";")):
             continue
-        cls = target_dex.get_class(desc)
-        if cls is None:
-            # Class may live in another multidex file.
-            for dex in dexes:
-                cls = dex.get_class(desc)
-                if cls is not None:
-                    break
+        _, cls = find_class(dexes, desc)
         if cls is None:
             continue
         for m in cls.get_methods():
-            d = m.get_descriptor()
-            if "Landroid/graphics/Canvas;" in d:
-                dump_method(m, f"field-type Canvas method {desc}->{m.get_name()}{d}")
+            descriptor = m.get_descriptor()
+            if "Landroid/graphics/Canvas;" in descriptor:
+                dump_method(m, f"field-type Canvas method {desc}->{m.get_name()}{descriptor}")
 
 
 if __name__ == "__main__":
