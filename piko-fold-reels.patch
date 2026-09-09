@@ -1522,7 +1522,7 @@ index 0000000..a799d32
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsDiagnostics.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsDiagnostics.java
 new file mode 100644
-index 0000000..3a18720
+index 0000000..f839018
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsDiagnostics.java
 @@ -0,0 +1,80 @@
@@ -1571,7 +1571,7 @@ index 0000000..3a18720
 +        RectF global = new RectF(); FoldReelsViews.bounds(view, global, new Matrix());
 +        Rect visible = new Rect(); view.getGlobalVisibleRect(visible);
 +        out.append(id(view)).append(' ').append(view.getWidth()).append('x').append(view.getHeight())
-+                .append(" global=").append(global).append(" visible=").append(visible).append(" vis=").append(view.getVisibility())
++                .append(" global=").append(global).append(" visibleInRoot=").append(visible).append(" vis=").append(view.getVisibility())
 +                .append(" alpha=").append(view.getAlpha()).append(" clip=").append(view.getClipBounds())
 +                .append(" outlineClip=").append(view.getClipToOutline()).append(" outline=").append(type(view.getOutlineProvider()))
 +                .append(" elevation=").append(view.getElevation()).append(" scale=").append(view.getScaleX()).append(',').append(view.getScaleY())
@@ -2724,10 +2724,10 @@ index 0000000..8b4058f
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsViewport.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsViewport.java
 new file mode 100644
-index 0000000..2c0802a
+index 0000000..cf467f8
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsViewport.java
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,67 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2744,6 +2744,7 @@ index 0000000..2c0802a
 +    final RectF visual = new RectF(), interactive = new RectF();
 +    private final Matrix matrix = new Matrix();
 +    private final Rect visible = new Rect();
++    private final int[] screenLocation = new int[2], windowLocation = new int[2];
 +    WeakReference<View> boundary = new WeakReference<>(null);
 +    String source = "viewer";
 +
@@ -2751,7 +2752,14 @@ index 0000000..2c0802a
 +                boolean immersive, boolean tabsHidden) {
 +        FoldReelsViews.bounds(nativeViewer, viewer, matrix);
 +        visual.set(viewer);
-+        if (nativeViewer.getGlobalVisibleRect(visible)) visual.intersect(new RectF(visible));
++        if (nativeViewer.getGlobalVisibleRect(visible)) {
++            // Despite its name this API returns root/window coordinates; transformMatrixToGlobal
++            // returns screen coordinates. Account for a freeform/multi-window origin before intersecting.
++            View viewRoot = nativeViewer.getRootView();
++            viewRoot.getLocationOnScreen(screenLocation); viewRoot.getLocationInWindow(windowLocation);
++            visible.offset(screenLocation[0] - windowLocation[0], screenLocation[1] - windowLocation[1]);
++            visual.intersect(new RectF(visible));
++        }
 +        window.setEmpty(); content.setEmpty();
 +        boolean hasWindow = valid(root, nativeViewer), hasContent = valid(holder, nativeViewer);
 +        if (hasWindow) FoldReelsViews.bounds(root, window, matrix);
