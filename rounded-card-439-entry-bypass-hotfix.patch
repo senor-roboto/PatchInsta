@@ -57,7 +57,7 @@
      require(helper.definingClass == ref.definingClass && helper.name == ref.name
 --- a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
 +++ b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
-@@ -47,6 +47,19 @@
+@@ -47,6 +47,18 @@
              "invoke-virtual {v0, v2}, $painter->differentName(Landroid/graphics/Canvas;)V","nop","return-void")
          assertNotNull(roundedCardHelper(draw, superclass))
      }
