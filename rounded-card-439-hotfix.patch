@@ -1,0 +1,138 @@
+diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
+index 43dd2c8..7f08a55 100644
+--- a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
++++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
+@@ -7,10 +7,12 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
+ import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
+ import com.android.tools.smali.dexlib2.Opcode
+ import com.android.tools.smali.dexlib2.AccessFlags
+ import com.android.tools.smali.dexlib2.iface.Method
++import com.android.tools.smali.dexlib2.iface.instruction.Instruction
+ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+ import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
+ import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
++import com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction
+ import com.android.tools.smali.dexlib2.iface.reference.FieldReference
+ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+ 
+@@ -18,10 +20,25 @@ internal const val ROUNDED_CARD = "Lcom/instagram/ui/widget/roundedcornerlayout/RoundedCornerFrameLayout;"
+ private const val CANVAS = "Landroid/graphics/Canvas;"
+ 
++private fun invokeRegisters(instruction: Instruction): List<Int> = when (instruction) {
++    is FiveRegisterInstruction -> listOf(
++        instruction.registerC, instruction.registerD, instruction.registerE,
++        instruction.registerF, instruction.registerG
++    ).take(instruction.registerCount)
++    is RegisterRangeInstruction -> (instruction.startRegister until
++        instruction.startRegister + instruction.registerCount).toList()
++    else -> emptyList()
++}
++
++private fun isInvoke(opcode: Opcode, normal: Opcode, range: Opcode) =
++    opcode == normal || opcode == range
++
+ /** Verify the actual APK, not obfuscated helper names copied from another Instagram build.
+- * Only super.dispatchDraw; load helper; helper.draw(Canvas); return is accepted.
++ * Accept both normal and /range invoke encodings emitted by D8/R8. The semantic contract
++ * remains super.dispatchDraw; load this.helper; helper.draw(Canvas); return.
+  * Never skip super.dispatchDraw (the native player, metadata and listeners). */
+ internal fun roundedCardHelper(draw: Method, superclass: String): MethodReference {
+     val body = requireNotNull(draw.implementation) { "Fold: rounded card has no draw implementation" }
+     val code = body.instructions.toList()
+@@ -29,28 +46,37 @@ internal fun roundedCardHelper(draw: Method, superclass: String): MethodReference {
+             && draw.parameterTypes == listOf(CANVAS) && draw.returnType == "V"
+             && draw.accessFlags and AccessFlags.STATIC.value == 0
+-            && body.tryBlocks.isEmpty()
+-            && code.map { it.opcode } == listOf(Opcode.INVOKE_SUPER, Opcode.IGET_OBJECT, Opcode.INVOKE_VIRTUAL, Opcode.RETURN_VOID)) {
++            && body.tryBlocks.isEmpty()) {
+         "Fold: unsupported RoundedCornerFrameLayout dispatchDraw; refusing to bypass unknown native drawing"
+     }
+     val self = body.registerCount - 2
+-    val superCall = code[0] as FiveRegisterInstruction
+-    val superRef = (code[0] as ReferenceInstruction).reference as MethodReference
+-    val field = code[1] as TwoRegisterInstruction
+-    val fieldRef = (code[1] as ReferenceInstruction).reference as FieldReference
+-    val call = code[2] as FiveRegisterInstruction
+-    val target = (code[2] as ReferenceInstruction).reference as MethodReference
+-    require(superCall.registerCount == 2 && superCall.registerC == self && superCall.registerD == self + 1
++    val meaningful = code.withIndex().filter { it.value.opcode != Opcode.NOP }
++    require(meaningful.size == 4
++            && isInvoke(meaningful[0].value.opcode, Opcode.INVOKE_SUPER, Opcode.INVOKE_SUPER_RANGE)
++            && meaningful[1].value.opcode == Opcode.IGET_OBJECT
++            && isInvoke(meaningful[2].value.opcode, Opcode.INVOKE_VIRTUAL, Opcode.INVOKE_VIRTUAL_RANGE)
++            && meaningful[3].value.opcode == Opcode.RETURN_VOID) {
++        "Fold: unsupported RoundedCornerFrameLayout dispatchDraw; refusing to bypass unknown native drawing"
++    }
++    val superInsn = meaningful[0].value
++    val superRef = (superInsn as ReferenceInstruction).reference as MethodReference
++    val fieldInsn = meaningful[1].value
++    val field = fieldInsn as TwoRegisterInstruction
++    val fieldRef = (fieldInsn as ReferenceInstruction).reference as FieldReference
++    val callInsn = meaningful[2].value
++    val target = (callInsn as ReferenceInstruction).reference as MethodReference
++    val superRegs = invokeRegisters(superInsn)
++    val callRegs = invokeRegisters(callInsn)
++    require(superRegs == listOf(self, self + 1)
+             && superRef.definingClass == superclass && superRef.name == "dispatchDraw"
+             && superRef.parameterTypes == listOf(CANVAS) && superRef.returnType == "V"
+             && field.registerB == self && field.registerA < self && fieldRef.definingClass == ROUNDED_CARD
+-            && call.registerCount == 2 && call.registerC == field.registerA && call.registerD == self + 1
++            && callRegs == listOf(field.registerA, self + 1)
+             && target.definingClass == fieldRef.type && target.parameterTypes == listOf(CANVAS) && target.returnType == "V") {
+         "Fold: rounded card draw dataflow changed"
+     }
+@@ -65,9 +91,10 @@ internal fun installRoundedCardHook(draw: MutableMethod, superclass: String, helper: Method) {
+         "Fold: rounded card helper is no longer a read-only corner/stroke painter"
+     }
+-    val calls = code.filter { it.opcode == Opcode.INVOKE_VIRTUAL }
++    val calls = code.filter { isInvoke(it.opcode, Opcode.INVOKE_VIRTUAL, Opcode.INVOKE_VIRTUAL_RANGE) }
+     require(calls.size == 2 && calls.all {
+         val method = (it as ReferenceInstruction).reference as? MethodReference
+         method?.definingClass == CANVAS && method.name == "drawPath"
+             && method.parameterTypes == listOf("Landroid/graphics/Path;", "Landroid/graphics/Paint;") && method.returnType == "V"
+     }) { "Fold: rounded card helper does not exclusively draw the corner mask and stroke" }
+@@ -75,7 +102,8 @@ internal fun installRoundedCardHook(draw: MutableMethod, superclass: String, helper: Method) {
+     // Reuse the helper register immediately BEFORE its native iget initializes it.
+     // Both branches are type-safe; parameters and the children's draw are untouched.
+-    val local = (draw.implementation!!.instructions.toList()[1] as TwoRegisterInstruction).registerA
+-    draw.addInstructionsWithLabels(1, """
++    val native = draw.implementation!!.instructions.toList()
++    val igetIndex = native.indexOfFirst { it.opcode == Opcode.IGET_OBJECT }
++    val local = (native[igetIndex] as TwoRegisterInstruction).registerA
++    draw.addInstructionsWithLabels(igetIndex, """
+         invoke-static/range {p0 .. p0}, Lapp/morphe/extension/instagram/patches/reels/FoldReels;->skipRoundedCardDecoration(Landroid/view/View;)Z
+         move-result v$local
+         if-eqz v$local, :fold_native_corners
+diff --git a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
+index f4cb8ab..8b0e7fb 100644
+--- a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
++++ b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
+@@ -27,6 +27,17 @@ class RoundedCardHookTest {
+         "invoke-virtual {v4, v0, v1}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V",
+         extra ?: "invoke-virtual {v4, v0, v1}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V", "return-void")
++    private fun rangeDraw() = method(ROUNDED_CARD, "dispatchDraw", 3,
++        "invoke-super/range {v1 .. v2}, $superclass->dispatchDraw(Landroid/graphics/Canvas;)V",
++        "iget-object v0, v1, $ROUNDED_CARD->whatever:$painter",
++        "invoke-virtual/range {v0 .. v2}, $painter->differentName(Landroid/graphics/Canvas;)V", "return-void")
++    private fun rangeHelper() = method(painter, "differentName", 6,
++        "iget-object v0, v3, $painter->path:Landroid/graphics/Path;",
++        "iget-object v1, v3, $painter->paint:Landroid/graphics/Paint;",
++        "invoke-virtual/range {v4 .. v5}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V",
++        "invoke-virtual/range {v4 .. v5}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V", "return-void")
+     @Test fun preservesChildrenAndGuardsOnlyVerifiedDecorationRegardlessOfHelperName() {
+         val draw = draw(); installRoundedCardHook(draw, superclass, helper())
+         val code=draw.implementation!!.instructions.toList()
+@@ -36,6 +47,11 @@ class RoundedCardHookTest {
+         assertEquals(Opcode.IGET_OBJECT,code[6].opcode)
+         assertEquals(Opcode.INVOKE_VIRTUAL,code[7].opcode)
+     }
++    @Test fun acceptsRangeEncodedDispatchFromD8R8() {
++        assertNotNull(roundedCardHelper(rangeDraw(), superclass))
++    }
++    @Test fun toleratesNoOpPaddingAroundTheVerifiedFourInstructionContract() {
++        val draw=method(ROUNDED_CARD,"dispatchDraw",3,"nop","invoke-super {v1, v2}, $superclass->dispatchDraw(Landroid/graphics/Canvas;)V","iget-object v0, v1, $ROUNDED_CARD->whatever:$painter","invoke-virtual {v0, v2}, $painter->differentName(Landroid/graphics/Canvas;)V","nop","return-void")
++        assertNotNull(roundedCardHelper(draw, superclass))
++    }
+     @Test fun rejectsUnexpectedDispatchWithoutPartiallyMutatingIt() {
+         val draw=draw("invoke-virtual {v1, v2}, $painter->differentName(Landroid/graphics/Canvas;)V")
+         try { installRoundedCardHook(draw, superclass, helper()); fail("wrong receiver accepted") } catch (_: IllegalArgumentException) {}
