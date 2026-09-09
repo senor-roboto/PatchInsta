@@ -1,16 +1,16 @@
-PatchInsta 4.1.1 corrige les chemins de présentation signalés après les essais réels de la 4.1.0.
+PatchInsta 4.1.2 corrige la géométrie des décorations reconnues en cover fullscreen après les retours de la 4.1.1.
 
-- Rattrapage au premier dessin du viewer et résolution du propriétaire de fenêtre quand le contexte d’inflation n’est pas une Activity.
-- Bandeau partagé ancré au viewport pendant les swipes ; raccourci placé sous le bandeau ; dégradé de background étendu sans agrandir les textes.
-- Métadonnées découvertes dans les overlays frères du wrapper vidéo, mode compact aussi sans bouton Suivre, caption native spécialisée bornée sans copie de texte.
-- Bordures de calques décoratifs correspondants et composites nettoyées en conservant les gradients.
+- La vidéo et le contraste utilisent les limites de la fenêtre, même si le contenu Android conserve d’anciens insets. Les vues interactives gardent leur espace natif sûr.
+- Les scrims inférieurs sont pris en charge, ainsi que les gradients de grande card et les foregrounds. Les composites de contraste suivent le viewport complet au lieu de perdre seulement leur stroke.
+- Chaque décoration suit la même page et le même déplacement que son player pendant le swipe. Les dessins restent dans leur couche native, sans ajouter de rectangle sombre ni reparenting des commandes.
+- Dessin privé et réversible, contrôle du clipping jusqu’à la fenêtre, restauration au changement de profil/détachement/remplacement natif. Diagnostic structurel enrichi pour identifier les variantes restantes.
 
-La vidéo, les pages préchargées et les gestes continuent d’utiliser le lecteur Instagram existant. Aucun rechargement automatique ni changement des MobileConfig v4 par défaut.
+Aucun changement de player, de listeners natifs, de flags MobileConfig par défaut, de cold-start hook ni de politique de rechargement.
 
-**Morphe :** actualiser la source PatchInsta déjà ajoutée vers **4.1.1**, repatcher l’APKM original **439.0.0.37.89 / arm64-v8a / 384510827**, puis installer par-dessus avec le même package Clone et le même keystore. Mettre à jour le bundle seul ne modifie pas l’APK déjà installé. Aucun nouvel import de source nécessaire.
+**Morphe :** actualiser la source PatchInsta existante vers **4.1.2**, repatcher l’APKM original **439.0.0.37.89 / arm64-v8a / 384510827**, puis installer par-dessus avec le même package Clone et le même keystore. Mettre à jour le bundle seul ne modifie pas l’APK installé.
 
-La CI exige 77 scénarios Android, 305 assertions JVM, 13 mappings FR/EN et 14 tests de distribution, puis compile et charge le vrai MPP avec Morphe. Elle vérifie aussi les assets téléchargés, le ZIP, leurs SHA-256 et l’accès anonyme de la source publique.
+Gates de publication : 98 scénarios Android dont 4 tests de dessin Canvas/Skia, 305 assertions JVM, 13 mappings FR/EN et 14 tests de distribution ; compilation réelle du MPP, chargement Morphe, contrôle du ZIP et des téléchargements publics par SHA-256.
 
-Les scénarios Android reproduisent des hiérarchies et gestes ; ils ne constituent pas une exécution d’Instagram sur le Fold. Les captures et la vidéo ont été analysées, mais leur hiérarchie de vues n’est pas accessible. Les branches inconnues restent natives ; le diagnostic structurel permet de les identifier sans extraire de texte utilisateur.
+**Limite de preuve :** les captures montrent l’ancienne géométrie, mais n’identifient pas les classes/drawables natifs qui dessinent chaque trait. Les défauts de code corrigés et les tests synthétiques ne prouvent pas que tous les traits Samsung ont disparu. Aucun test matériel ni patching local de l’APKM propriétaire n’est revendiqué. Les décorations inconnues restent natives et sont décrites dans le diagnostic.
 
-Consulter GUIDE-FR.md, ENGINEERING-4.1.1.md dans le dépôt et build-info.json / test-results.json dans la Release.
+Consulter GUIDE-FR.md et ENGINEERING-4.1.2.md dans le dépôt, puis build-info.json / test-results.json dans cette Release.

@@ -1,3 +1,11 @@
+# 4.1.2
+
+* **Instagram:** Repère de dessin fondé sur la fenêtre en cover fullscreen, distinct du contenu Android et des limites tactiles natives.
+* **Instagram:** Gradients natifs du haut, du bas et composites de card adaptés au viewport complet, avec le même déplacement que les pages vidéo pendant le swipe.
+* **Instagram:** Dessin conservé dans ses couches natives ; frontières de clipping restaurées, aucune superposition sombre ajoutée au-dessus des commandes.
+* **Instagram:** Décorations ImageView de géométrie correspondante couvertes ; diagnostic des bounds, foregrounds, couches et ancêtres enrichi sans texte utilisateur.
+* **Instagram:** Cold start, player, gestes, profils et URL de source Morphe conservés ; nouveaux contrôles de géométrie et de rasterisation Android simulée.
+
 # 4.1.1
 
 * **Instagram:** Rattrapage du premier dessin et des contextes d’inflation sans Activity, sans recharger le lecteur.

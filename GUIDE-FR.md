@@ -1,4 +1,4 @@
-# PatchInsta 4.1.1 — installation et utilisation
+# PatchInsta 4.1.2 — installation et utilisation
 
 Bundle non officiel basé sur Piko 3.9.0 au commit `50744aa07bb41c4e1f942a06614ef4e6f2e3610c`. Cible inchangée : Instagram **439.0.0.37.89 / arm64-v8a / 384510827**, à partir de l’**APKM original non patché**.
 
@@ -38,7 +38,7 @@ Sur l’écran interne, la vidéo entière, les actions et les métadonnées com
 
 Les anciens choix explicitement enregistrés sont conservés. En particulier, l’ancien mode minimal activé devient **Commentaire seul** ; désactivé explicitement, il devient **Toutes**. Choisir **Plein écran propre** une fois pour appliquer l’ensemble des nouveaux défauts cover.
 
-Les vues natives de l’avatar, du nom et de Suivre sont réutilisées. La largeur est calculée à partir du rail commentaire, une caption TextView occupe une ligne avec ellipsis. Une caption dessinée par une vue native spécialisée est limitée à une ligne visible, sans copier son texte ; son comportement d’ouverture reste natif. Le bloc reste dans la zone tactile du viewer : si celle-ci ne rejoint pas le bas physique de l’écran, un retrait inférieur peut rester. Le bandeau supérieur partagé reconnu est maintenu dans le viewport pendant les swipes, et le raccourci se place en dessous pour éviter les amis. Le dégradé identifié est étendu au vrai bord, même lorsqu’il est le background du bandeau : seuls ses pixels sont étendus. Les couches de bordure inspectables sont séparées du dégradé. Les décorations non reconnues restent natives.
+Les vues natives de l’avatar, du nom et de Suivre sont réutilisées. La largeur est calculée à partir du rail commentaire, une caption TextView occupe une ligne avec ellipsis. Une caption dessinée par une vue native spécialisée est limitée à une ligne visible, sans copier son texte ; son comportement d’ouverture reste natif. Le bloc reste dans la zone tactile du viewer : si celle-ci ne rejoint pas le bas physique de l’écran, un retrait inférieur peut rester. Le bandeau supérieur partagé reconnu est maintenu dans le viewport pendant les swipes, et le raccourci se place en dessous pour éviter les amis. Les gradients identifiés du haut, du bas et des grandes décorations de card utilisent le repère visuel de la fenêtre en plein écran. Ils gardent leur couche native (background/foreground/image) ; les vues interactives restent dans les limites tactiles du viewer. Les composites de contraste sont adaptés dans leur ensemble, avec des copies privées des drawables. Les décorations non reconnues restent natives.
 
 ## Options avancées
 
@@ -70,6 +70,6 @@ Les tests CI portent sur des vues Android simulées, pas sur le décodeur Instag
 
 ## Fichiers durables
 
-[Release 4.1.1](https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.1) : `PatchInsta-4.1.1.mpp`, `PatchInsta-4.1.1.zip`, `SHA256SUMS.txt`, ce guide, licence, notice, changelog, sources et informations de compilation. Le ZIP contient le même `.mpp` que le fichier direct. Ses sommes internes vérifient les fichiers qu’il contient ; les sommes externes vérifient aussi le ZIP.
+[Release 4.1.2](https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.2) : `PatchInsta-4.1.2.mpp`, `PatchInsta-4.1.2.zip`, `SHA256SUMS.txt`, ce guide, licence, notice, changelog, sources et informations de compilation. Le ZIP contient le même `.mpp` que le fichier direct. Ses sommes internes vérifient les fichiers qu’il contient ; les sommes externes vérifient aussi le ZIP.
 
 GPL-3.0-or-later ; les mentions Piko amont sont conservées. Aucun APK Instagram redistribué.

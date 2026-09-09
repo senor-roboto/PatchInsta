@@ -89,7 +89,7 @@ def metadata(config, release):
     version_tuple(config['version'])
     # Manager's DTO uses kotlinx.datetime.LocalDateTime, without a timezone suffix.
     created = datetime.fromisoformat(release['published_at'].replace('Z','+00:00')).astimezone(timezone.utc).replace(tzinfo=None).isoformat(timespec='seconds')
-    return {'created_at':created, 'description':'Instagram : rattrapage au premier dessin, bandeau fixe, contour et calques de métadonnées corrigés.',
+    return {'created_at':created, 'description':'Instagram : repères fenêtre/tactile distincts, gradients natifs haut et bas plein écran, restauration des décorations.',
             'download_url':f"https://github.com/{config['repository']}/releases/download/v{config['version']}/PatchInsta-{config['version']}.mpp",
             'signature_download_url':None, 'page_url':release['html_url'], 'version':config['version']}
 
