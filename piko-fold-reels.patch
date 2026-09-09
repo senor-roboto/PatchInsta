@@ -3035,10 +3035,10 @@ index 0000000..f0f2e6c
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java
 new file mode 100644
-index 0000000..1f54fc2
+index 0000000..ed0a8e1
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java
-@@ -0,0 +1,181 @@
+@@ -0,0 +1,185 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.app.Activity;
@@ -3198,7 +3198,11 @@ index 0000000..1f54fc2
 +        assertEquals(state(t),"window",t.spaces.source);
 +        assertEquals(t.spaces.window.top,t.lastViewport.top,.01f);
 +        assertTrue(t.spaces.content.top>t.spaces.visual.top);
-+        assertEquals(FoldReelsTestFixture.bounds(viewer),t.spaces.interactive);
++        // This fixture's stale content inset puts the last 16 px of the viewer outside the window.
++        // The interaction area must stop at the real window, not inherit the stale native bottom.
++        assertEquals(FoldReelsTestFixture.bounds(viewer).top,t.spaces.interactive.top,.01f);
++        assertEquals(t.spaces.window.bottom,t.spaces.interactive.bottom,.01f);
++        assertTrue(FoldReelsTestFixture.bounds(viewer).bottom>t.spaces.interactive.bottom);
 +        assertNotNull(t.chip.get());assertTrue(t.failures.toString(),t.failures.isEmpty());
 +        TextView chip=t.chip.get();FoldReels.prefs.crop(false,false);t.onPreDraw();
 +        assertEquals("viewer",t.spaces.source);assertSame(chip,t.chip.get());assertEquals(1,video.getScaleX(),.001f);

@@ -57,7 +57,7 @@ Les tests nouveaux couvrent : contenu en retrait, fenêtre redimensionnée/dépl
 
 La CI compile réellement le `.mpp`, charge les patchs avec Morphe, vérifie le manifeste et l’extension DEX puis le ZIP et les checksums. La publication n’a lieu qu’après réussite, sur la source existante ; les assets sont téléchargés et vérifiés à nouveau, puis l’URL anonyme stable et le MPP sont relus.
 
-**Statut au commit de préparation : en attente de CI et de publication.** Les preuves et URLs exactes seront consignées après exécution. Les tests locaux JVM/mappings/distribution sont verts ; aucun build Android local n’est revendiqué.
+**Statut au commit de préparation : en attente de CI finale et de publication.** Le premier run a exécuté les 98 scénarios : 97 réussis, dont les quatre rasterisations ; une assertion de la nouvelle fixture cold start attendait à tort les 16 pixels du viewer situés hors fenêtre. Elle vérifie maintenant explicitement la limitation à la fenêtre. Le code de production effectuait déjà correctement cette limitation. Les preuves et URLs exactes seront consignées après exécution. Les tests locaux JVM/mappings/distribution sont verts ; aucun build Android local n’est revendiqué.
 
 ## Vérification matérielle restante
 
