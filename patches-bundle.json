@@ -1,8 +1,8 @@
 {
-  "created_at": "2026-09-08T22:35:08",
-  "description": "Instagram : rattrapage au premier dessin, bandeau fixe, contour et calques de m\u00e9tadonn\u00e9es corrig\u00e9s.",
-  "download_url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.1/PatchInsta-4.1.1.mpp",
+  "created_at": "2026-09-09T06:10:09",
+  "description": "Instagram : rep\u00e8res fen\u00eatre/tactile distincts, gradients natifs haut et bas plein \u00e9cran, restauration des d\u00e9corations.",
+  "download_url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.2/PatchInsta-4.1.2.mpp",
   "signature_download_url": null,
-  "page_url": "https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.1",
-  "version": "4.1.1"
+  "page_url": "https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.2",
+  "version": "4.1.2"
 }
