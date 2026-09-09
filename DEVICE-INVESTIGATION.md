@@ -1,3 +1,7 @@
+# Mise à jour après réception des diagnostics
+
+Les relevés interne et externe ont permis de préparer le correctif 4.1.3 : [attribution, preuves, modifications et limites](ENGINEERING-4.1.3.md). Le constat ci-dessous conserve l’état de l’enquête avant réception de ces relevés ; il ne décrit pas les nouveaux outils de diagnostic.
+
 # Défaut cover encore ouvert après 4.1.2
 
 ## Conclusion de la comparaison sur appareil

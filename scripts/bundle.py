@@ -80,9 +80,9 @@ def verify_kit(directory, config):
 
 def test_results(upstream):
     root = upstream / 'extensions/instagram/build/test-results/testReleaseUnitTest'
-    expected = {'FoldReelsRuntimeTest':14, 'FoldReelsLifecycleTest':19, 'FoldReelsPreferencesTest':4,
-                'FoldReelsPresentationTest':23, 'FoldReelsScrimTest':5, 'FoldReelsUpdateTest':13,
-                'FoldReelsViewportTest':16, 'FoldReelsDrawingTest':4}
+    expected = {'FoldReelsRuntimeTest':14, 'FoldReelsLifecycleTest':20, 'FoldReelsPreferencesTest':4,
+                'FoldReelsPresentationTest':23, 'FoldReelsScrimTest':5, 'FoldReelsUpdateTest':15,
+                'FoldReelsViewportTest':16, 'FoldReelsDrawingTest':4, 'FoldReelsNativeDecorationTest':6, 'FoldReelsNativeScrimTest':6}
     suites = {}
     for report in root.glob('TEST-*FoldReels*Test.xml'):
         suite = ET.parse(report).getroot()
@@ -92,7 +92,11 @@ def test_results(upstream):
         suites[name] = int(suite.attrib['tests'])
     if suites != expected:
         raise ValueError(f'Unexpected Android test reports: {suites}, expected {expected}')
-    return {'android_scenarios':sum(suites.values()), 'suites':suites, 'policy_geometry_checks':305,
+    hook_report = upstream / 'patches/build/test-results/test/TEST-app.crimera.patches.instagram.misc.reels.RoundedCardHookTest.xml'
+    hook_suite = ET.parse(hook_report).getroot()
+    if int(hook_suite.attrib['tests']) != 5 or any(int(hook_suite.attrib[k]) for k in ('errors', 'failures', 'skipped')):
+        raise ValueError('Native draw bytecode guard tests must all pass')
+    return {'bytecode_guard_tests':5, 'android_scenarios':sum(suites.values()), 'suites':suites, 'policy_geometry_checks':305,
             'mapping_keys':13, 'device_validation':False, 'instagram_apk_patch_validation':False}
 
 

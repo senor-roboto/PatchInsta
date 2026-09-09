@@ -1,4 +1,4 @@
-# PatchInsta 4.1.2 — installation et utilisation
+# PatchInsta 4.1.3 — installation et utilisation
 
 Bundle non officiel basé sur Piko 3.9.0 au commit `50744aa07bb41c4e1f942a06614ef4e6f2e3610c`. Cible inchangée : Instagram **439.0.0.37.89 / arm64-v8a / 384510827**, à partir de l’**APKM original non patché**.
 
@@ -70,6 +70,14 @@ Les tests CI portent sur des vues Android simulées, pas sur le décodeur Instag
 
 ## Fichiers durables
 
-[Release 4.1.2](https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.2) : `PatchInsta-4.1.2.mpp`, `PatchInsta-4.1.2.zip`, `SHA256SUMS.txt`, ce guide, licence, notice, changelog, sources et informations de compilation. Le ZIP contient le même `.mpp` que le fichier direct. Ses sommes internes vérifient les fichiers qu’il contient ; les sommes externes vérifient aussi le ZIP.
+[Release 4.1.3](https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.3) : `PatchInsta-4.1.3.mpp`, `PatchInsta-4.1.3.zip`, `SHA256SUMS.txt`, ce guide, licence, notice, changelog, sources et informations de compilation. Le ZIP contient le même `.mpp` que le fichier direct. Ses sommes internes vérifient les fichiers qu’il contient ; les sommes externes vérifient aussi le ZIP.
 
 GPL-3.0-or-later ; les mentions Piko amont sont conservées. Aucun APK Instagram redistribué.
+
+## Diagnostic fiable à partir de 4.1.3
+
+Fermer les dialogues, afficher le défaut sur l’écran concerné, puis faire un appui long sur **Entière / Remplir** → **Options avancées** → **Diagnostic du lecteur** → **Enregistrer .txt**. Choisir un emplacement avec le sélecteur Android et joindre ce fichier complet. Le relevé est figé avant le premier dialogue (`capture=before-layout-menu`), pour éviter que sa perte de focus efface les players. Si un réglage ou l’écran a changé, fermer puis rouvrir les réglages pour un nouveau relevé.
+
+Le rapport commence par les chemins natifs des players et inclut les drawables montés par Litho lorsque son API publique est disponible. Il ne lit ni caption, ni compte, ni média, ni description d’accessibilité. `drawCalls` / `suppressed` indiquent l’exécution du hook du contour ; `draws` / `lastCanvasClip` documentent le dessin des gradients. Aucun envoi automatique.
+
+Le nouveau hook contrôle la forme du dessinateur natif dans l’APKM lors du patchage. Si Morphe signale `unsupported RoundedCornerFrameLayout` ou `rounded card helper`, conserver le journal : cela signifie que la forme réelle ne correspond pas au contrat vérifié. Le patch refuse alors de supprimer un dessin inconnu.
