@@ -1,6 +1,6 @@
 --- a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
-@@ -40,13 +40,16 @@
+@@ -40,11 +40,15 @@
      require(draw.definingClass == ROUNDED_CARD && draw.name == "dispatchDraw"
              && draw.parameterTypes == listOf(CANVAS) && draw.returnType == "V"
 -            && draw.accessFlags and AccessFlags.STATIC.value == 0
@@ -20,7 +20,7 @@
      require(meaningful.size == 4
              && isInvoke(meaningful[0].value.opcode, Opcode.INVOKE_SUPER, Opcode.INVOKE_SUPER_RANGE)
              && meaningful[1].value.opcode == Opcode.IGET_OBJECT
-@@ -54,7 +57,8 @@
+@@ -54,6 +58,7 @@
              && isInvoke(meaningful[2].value.opcode, Opcode.INVOKE_VIRTUAL, Opcode.INVOKE_VIRTUAL_RANGE)
              && meaningful[3].value.opcode == Opcode.RETURN_VOID) {
 -        "Fold: unsupported RoundedCornerFrameLayout dispatchDraw; refusing to bypass unknown native drawing; opcodes=${code.map { it.opcode }}"
