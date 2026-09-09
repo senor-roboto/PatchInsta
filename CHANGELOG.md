@@ -1,3 +1,12 @@
+# 4.1.4
+
+- Corrige le refus de patchage de la 4.1.3 sur Instagram `439.0.0.37.89` lorsque D8/R8 encode le `dispatchDraw` du `RoundedCornerFrameLayout` avec des formes `/range` ou du padding `nop`.
+- Le matcher reste sémantiquement strict : `super.dispatchDraw(Canvas)` doit être conservé, le helper natif doit être chargé depuis l’instance, appelé avec le même `Canvas`, puis retourner sans autre effet.
+- Les appels du helper restent limités aux deux `Canvas.drawPath(Path, Paint)` attendus ; les registres et types sont toujours vérifiés avant injection.
+- Les erreurs de forme ou de dataflow remontent maintenant les opcodes observés pour faciliter le diagnostic sur APK réel.
+- Ajoute deux tests bytecode (variante `invoke-super/range` et padding `nop`) et distribue le hotfix source avec le bundle 4.1.4.
+- Cette passe valide la compatibilité du patchage et ne revendique toujours pas un résultat pixel-perfect sur Fold sans test appareil.
+
 # 4.1.3
 
 - Traite le masque de coins et le stroke dessinés après les enfants par `RoundedCornerFrameLayout`, en plus des backgrounds/foregrounds : contrôle strict du bytecode natif lors du patchage ; suppression limitée aux wrappers de players réellement transformés en cover.
