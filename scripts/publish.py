@@ -89,7 +89,7 @@ def metadata(config, release):
     version_tuple(config['version'])
     # Manager's DTO uses kotlinx.datetime.LocalDateTime, without a timezone suffix.
     created = datetime.fromisoformat(release['published_at'].replace('Z','+00:00')).astimezone(timezone.utc).replace(tzinfo=None).isoformat(timespec='seconds')
-    return {'created_at':created, 'description':'Instagram 439 : compatibilité du hook RoundedCornerFrameLayout avec les encodages D8/R8 /range, garde bytecode conservé.',
+    return {'created_at':created, 'description':'Instagram 439 : chemin normal RoundedCornerFrameLayout vérifié même avec handlers R8 ; garde bytecode conservé.',
             'download_url':f"https://github.com/{config['repository']}/releases/download/v{config['version']}/PatchInsta-{config['version']}.mpp",
             'signature_download_url':None, 'page_url':release['html_url'], 'version':config['version']}
 
