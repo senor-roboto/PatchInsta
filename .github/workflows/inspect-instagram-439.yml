@@ -31,4 +31,12 @@ jobs:
             --output /tmp/instagram-439.apk
           echo '8b129b179169bb9e49937cb20481ee6c8d30d64261d7850308d8619698df5802  /tmp/instagram-439.apk' | sha256sum -c -
       - name: Dump RoundedCornerFrameLayout dispatchDraw with operands and references
-        run: python scripts/inspect_instagram_439.py /tmp/instagram-439.apk
+        run: |
+          python scripts/inspect_instagram_439.py /tmp/instagram-439.apk | tee instagram-439-dex.txt
+      - name: Preserve exact DEX evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: instagram-439-dex
+          path: instagram-439-dex.txt
+          if-no-files-found: error
+          retention-days: 14
