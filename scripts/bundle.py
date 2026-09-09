@@ -62,7 +62,7 @@ def verify_kit(directory, config):
     stem = 'PatchInsta-' + config['version']
     required = {stem+'.mpp', stem+'.zip', 'GUIDE-FR.md', 'LICENSE', 'NOTICE', 'CHANGELOG.md',
                 'build-info.json', 'patches-list.json', 'piko-fold-reels.patch',
-                'rounded-card-439-hotfix.patch', 'test-results.json'}
+                'rounded-card-439-hotfix.patch', 'rounded-card-439-tryblock-hotfix.patch', 'test-results.json'}
     if not required.issubset(checksums):
         raise ValueError('Missing required release assets')
     validate_mpp(directory / (stem+'.mpp'), config['version'], config['name'])
@@ -120,7 +120,7 @@ def prepare(root, upstream, output):
         raise ValueError('Output directory must be empty')
     stem = 'PatchInsta-' + version
     shutil.copy2(bundles[0], output/(stem+'.mpp'))
-    for name in ('GUIDE-FR.md','LICENSE','NOTICE','CHANGELOG.md','piko-fold-reels.patch','rounded-card-439-hotfix.patch'):
+    for name in ('GUIDE-FR.md','LICENSE','NOTICE','CHANGELOG.md','piko-fold-reels.patch','rounded-card-439-hotfix.patch','rounded-card-439-tryblock-hotfix.patch'):
         shutil.copy2(root/name, output/name)
     shutil.copy2(upstream/'patches-list.json', output/'patches-list.json')
     (output/'test-results.json').write_text(json.dumps(results, indent=2)+'\n')
@@ -129,6 +129,7 @@ def prepare(root, upstream, output):
             'mpp_sha256':digest(output/(stem+'.mpp')),
             'source_patch_sha256':digest(root/'piko-fold-reels.patch'),
             'hotfix_patch_sha256':digest(root/'rounded-card-439-hotfix.patch'),
+            'tryblock_hotfix_patch_sha256':digest(root/'rounded-card-439-tryblock-hotfix.patch'),
             'manifest':manifest, 'tests':results}
     (output/'build-info.json').write_text(json.dumps(info, indent=2)+'\n')
     def sums():

@@ -1,3 +1,12 @@
+# 4.1.5
+
+- Corrige le second refus observé sur le vrai Instagram `439.0.0.37.89` après la 4.1.4 : le garde échouait avant même la vérification des opcodes, au niveau du contrat de méthode `dispatchDraw`.
+- `RoundedCornerFrameLayout.dispatchDraw` peut maintenant conserver les blocs `try/catch` ajoutés par R8 tant que son chemin normal reste exactement vérifié : `super.dispatchDraw(Canvas)`, chargement du helper, appel avec le même `Canvas`, puis premier `return-void`.
+- Le garde n’ignore jamais de travail supplémentaire avant ce premier retour. Seul du code de handler placé après le retour normal peut coexister avec le contrat attendu.
+- Les diagnostics d’échec indiquent désormais le nombre de `tryBlocks` et les opcodes observés, afin que toute variante encore inconnue soit exploitable directement depuis Morphe.
+- Les vérifications de registres, types, helper et `Canvas.drawPath(Path, Paint)` de la 4.1.4 restent intactes ; aucun bypass générique du dessin natif n’est ajouté.
+- Cette version vise d’abord à rendre le patch applicable au véritable APK 439. Le retrait visuel du cadre et le rendu final doivent encore être validés sur le Galaxy Z Fold 8 réel.
+
 # 4.1.4
 
 - Corrige le refus de patchage de la 4.1.3 sur Instagram `439.0.0.37.89` lorsque D8/R8 encode le `dispatchDraw` du `RoundedCornerFrameLayout` avec des formes `/range` ou du padding `nop`.
