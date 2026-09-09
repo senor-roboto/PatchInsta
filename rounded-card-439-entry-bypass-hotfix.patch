@@ -1,6 +1,6 @@
 --- a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
-@@ -80,12 +80,9 @@
+@@ -80,11 +80,8 @@
          // post-children drawing, invisible to background/foreground inspection.
          val rounded = mutableClassDefBy(ROUNDED_CARD)
          val roundedDraw = rounded.methods.single { it.name == "dispatchDraw"
@@ -15,7 +15,7 @@
          }
 --- a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
-@@ -76,6 +76,35 @@
+@@ -76,6 +76,39 @@
      return target
  }
  
@@ -57,18 +57,16 @@
      require(helper.definingClass == ref.definingClass && helper.name == ref.name
 --- a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
 +++ b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
-@@ -47,6 +47,18 @@
+@@ -47,6 +47,19 @@
              "invoke-virtual {v0, v2}, $painter->differentName(Landroid/graphics/Canvas;)V","nop","return-void")
          assertNotNull(roundedCardHelper(draw, superclass))
      }
 +    @Test fun productionEntryBypassAcceptsAComplex439StyleDispatchWithoutMatchingItsHelpers() {
 +        val draw=method(ROUNDED_CARD,"dispatchDraw",5,
 +            "const/4 v0, 0",
-+            "if-eqz v0, :beforeSuper",
-+            ":beforeSuper",
++            "const/4 v1, 1",
 +            "invoke-super/range {v3 .. v4}, $superclass->dispatchDraw(Landroid/graphics/Canvas;)V",
-+            "if-eqz v0, :done",
-+            ":done",
++            "const/4 v2, 2",
 +            "return-void")
 +        installRoundedCardEntryBypass(draw, superclass)
 +        val code=draw.implementation!!.instructions.toList()
