@@ -5296,10 +5296,10 @@ index c76b16f..6cfd00e 100644
      <string name="piko_disable_ads">Disable ads</string>
 diff --git a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
 new file mode 100644
-index 0000000..fafe20f
+index 0000000..0fc4158
 --- /dev/null
 +++ b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
-@@ -0,0 +1,187 @@
+@@ -0,0 +1,242 @@
 +package app.crimera.patches.instagram.misc.reels
 +
 +import app.morphe.patcher.util.smali.toInstruction
@@ -5382,6 +5382,61 @@ index 0000000..fafe20f
 +        emit("return-void")
 +        b.addCatch(start, end, handler)
 +        return method(b.methodImplementation)
++    }
++    /** Captured from original arm64 APK 439.0.0.37.89, base SHA256
++     * 9a5cc97a8b4c1b804f37310d7f75bbb2eae2dea72066426d92d4b242f98d5961.
++     * References, registers, branch targets and catch interval match classes2.dex. */
++    @Test fun original439InheritedDispatchAndCatchInterval() {
++        val b = MethodImplementationBuilder(7)
++        fun emit(s: String) { b.addInstruction(s.toInstruction()) }
++        emit("const/4 v3, 0")
++        emit("invoke-static {v6, v3}, LX/04l9;->A0j(Ljava/lang/Object;I)V")
++        emit("iget-object v4, v5, $ROUNDED_CARD->A00:LX/01yD;")
++        b.addInstruction(BuilderInstruction21t(Opcode.IF_EQZ, 4, b.getLabel("plain")))
++        emit("iget-object v2, v4, LX/01yD;->A05:LX/04O1;")
++        b.addInstruction(BuilderInstruction21t(Opcode.IF_EQZ, 2, b.getLabel("start")))
++        emit("iget v1, v4, LX/01yD;->A04:I")
++        emit("iget v0, v4, LX/01yD;->A02:I")
++        emit("invoke-virtual {v2, v3, v3, v1, v0}, Landroid/graphics/drawable/Drawable;->setBounds(IIII)V")
++        val start = b.addLabel("start")
++        emit("iget-object v3, v4, LX/01yD;->A07:LX/09sa;")
++        emit("iget v1, v4, LX/01yD;->A04:I")
++        emit("iget v0, v4, LX/01yD;->A02:I")
++        emit("invoke-interface {v3, v6, v1, v0}, LX/09sa;->AUE(${canvas}II)$canvas")
++        emit("move-result-object v0")
++        emit("invoke-super {v5, v0}, Landroid/view/ViewGroup;->dispatchDraw($canvas)V")
++        val end = b.addLabel("end")
++        emit("invoke-interface {v3, v6}, LX/09sa;->B8l($canvas)V")
++        emit("iget v2, v4, LX/01yD;->A04:I")
++        emit("iget v1, v4, LX/01yD;->A02:I")
++        emit("iget v0, v4, LX/01yD;->A00:F")
++        emit("invoke-interface {v3, v6, v0, v2, v1}, LX/09sa;->B66(${canvas}FII)V")
++        emit("return-void")
++        val handler = b.addLabel("handler")
++        emit("move-exception v1")
++        emit("iget-object v0, v4, LX/01yD;->A07:LX/09sa;")
++        emit("invoke-interface {v0, v6}, LX/09sa;->B8l($canvas)V")
++        emit("throw v1")
++        b.addLabel("plain")
++        emit("invoke-super {v5, v6}, Landroid/view/ViewGroup;->dispatchDraw($canvas)V")
++        emit("return-void")
++        b.addCatch(start, end, handler)
++        val m = method(b.methodImplementation, AccessFlags.PUBLIC.value or AccessFlags.FINAL.value)
++        val owner = cls(listOf(m), "LX/06a4;")
++        val lookup439: (String) -> ClassDef? = { if (it == "LX/06a4;") cls(emptyList(), frame, it) else null }
++        val plan = identifyRoundedCard(owner, lookup439)
++        assertEquals(25, plan.fallbackIndex)
++        assertEquals("Landroid/view/ViewGroup;", plan.parentCall.definingClass)
++        assertEquals(56, m.implementation!!.instructions.sumOf { it.codeUnits })
++        val oldTry = m.implementation!!.tryBlocks.single()
++        assertEquals(19, oldTry.startCodeAddress)
++        assertEquals(13, oldTry.codeUnitCount)
++        assertEquals(45, oldTry.exceptionHandlers.single().handlerCodeAddress)
++        val after = installRoundedCardEntryBypass(owner, lookup439)
++        assertEquals(listOf(5, 6), invokeRegisters(after.implementation!!.instructions.toList()[3]))
++        assertEquals(29, after.implementation!!.tryBlocks.single().startCodeAddress)
++        assertEquals(55, after.implementation!!.tryBlocks.single().exceptionHandlers.single().handlerCodeAddress)
++        assertEquals(7, after.implementation!!.registerCount)
 +    }
 +    @Test fun acceptsReported439ShapeUsingAncestorReference() {
 +        val m = reportedShape(); assertEquals(27, m.implementation!!.instructions.count())

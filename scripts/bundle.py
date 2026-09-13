@@ -95,9 +95,9 @@ def test_results(upstream):
         raise ValueError(f'Unexpected Android test reports: {suites}, expected {expected}')
     hook_report = upstream / 'patches/build/test-results/test/TEST-app.crimera.patches.instagram.misc.reels.RoundedCardHookTest.xml'
     hook_suite = ET.parse(hook_report).getroot()
-    if int(hook_suite.attrib['tests']) != 19 or any(int(hook_suite.attrib[k]) for k in ('errors', 'failures', 'skipped')):
+    if int(hook_suite.attrib['tests']) != 20 or any(int(hook_suite.attrib[k]) for k in ('errors', 'failures', 'skipped')):
         raise ValueError('Native draw bytecode guard tests must all pass')
-    return {'bytecode_guard_tests':19, 'android_scenarios':sum(suites.values()), 'suites':suites, 'policy_geometry_checks':305,
+    return {'bytecode_guard_tests':20, 'android_scenarios':sum(suites.values()), 'suites':suites, 'policy_geometry_checks':305,
             'mapping_keys':13, 'device_validation':False, 'instagram_apk_patch_validation':False}
 
 
