@@ -4605,7 +4605,7 @@ index 0000000..3a842a4
 +    public ClipsViewerActionBar(Context context) { super(context); }
 +}
 diff --git a/gradle.properties b/gradle.properties
-index 10591c8..1d0f0a0 100644
+index 10591c8..0d6e7b2 100644
 --- a/gradle.properties
 +++ b/gradle.properties
 @@ -2,4 +2,4 @@ org.gradle.parallel = true
@@ -4613,7 +4613,7 @@ index 10591c8..1d0f0a0 100644
  kotlin.code.style = official
  android.useAndroidX = true
 -version = 3.9.0
-+version = 4.1.3
++version = 4.1.7
 diff --git a/patches/build.gradle.kts b/patches/build.gradle.kts
 index 4a17b30..082a013 100644
 --- a/patches/build.gradle.kts
@@ -4657,10 +4657,10 @@ index 4a17b30..082a013 100644
  
 diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
 new file mode 100644
-index 0000000..0752782
+index 0000000..b6bac75
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
-@@ -0,0 +1,117 @@
+@@ -0,0 +1,116 @@
 +/*
 + * Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE.
 + */
@@ -4740,15 +4740,14 @@ index 0000000..0752782
 +        }
 +        draw.addInstruction(0,
 +            "invoke-static/range {p0 .. p0}, Lapp/morphe/extension/instagram/patches/reels/FoldReels;->beforeViewerDraw(Landroid/view/View;)V")
-+        // The device report identifies this native page class. Its border is custom
-+        // post-children drawing, invisible to background/foreground inspection.
++        // Validate and construct a replacement transactionally before changing the class.
++        // The parent reference is resolved from this APK, not an obfuscated name from another build.
 +        val rounded = mutableClassDefBy(ROUNDED_CARD)
-+        val roundedDraw = rounded.methods.single { it.name == "dispatchDraw"
-+            && it.parameterTypes == listOf("Landroid/graphics/Canvas;") && it.returnType == "V" }
-+        val helperRef = roundedCardHelper(roundedDraw, rounded.superclass!!)
-+        val helper = mutableClassDefBy(helperRef.definingClass).methods.single { it.name == helperRef.name
-+            && it.parameterTypes == helperRef.parameterTypes && it.returnType == helperRef.returnType }
-+        installRoundedCardHook(roundedDraw, rounded.superclass!!, helper)
++        val replacement = installRoundedCardEntryBypass(rounded) { type -> classDefByOrNull(type) }
++        val previous = rounded.methods.single { it.name == replacement.name
++            && it.parameterTypes == replacement.parameterTypes && it.returnType == replacement.returnType }
++        rounded.methods.remove(previous)
++        rounded.methods.add(replacement)
 +        var dispatch = viewerClass.methods.firstOrNull {
 +            it.name == "dispatchTouchEvent" && it.parameterTypes == listOf("Landroid/view/MotionEvent;") && it.returnType == "Z"
 +        }
@@ -4780,89 +4779,257 @@ index 0000000..0752782
 +}
 diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
 new file mode 100644
-index 0000000..43dd2c8
+index 0000000..17ca4ef
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,248 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.crimera.patches.instagram.misc.reels
 +
-+import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 +import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
-+import com.android.tools.smali.dexlib2.Opcode
 +import com.android.tools.smali.dexlib2.AccessFlags
++import com.android.tools.smali.dexlib2.Opcode
++import com.android.tools.smali.dexlib2.iface.ClassDef
 +import com.android.tools.smali.dexlib2.iface.Method
-+import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
-+import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
-+import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
++import com.android.tools.smali.dexlib2.iface.debug.*
++import com.android.tools.smali.dexlib2.iface.instruction.*
 +import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 +import com.android.tools.smali.dexlib2.iface.reference.MethodReference
++import com.android.tools.smali.dexlib2.immutable.*
++import com.android.tools.smali.dexlib2.immutable.instruction.*
++import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference
 +
 +internal const val ROUNDED_CARD = "Lcom/instagram/ui/widget/roundedcornerlayout/RoundedCornerFrameLayout;"
 +private const val CANVAS = "Landroid/graphics/Canvas;"
++private const val VIEW_GROUP = "Landroid/view/ViewGroup;"
++private const val FRAME_LAYOUT = "Landroid/widget/FrameLayout;"
++private const val EXTENSION = "Lapp/morphe/extension/instagram/patches/reels/FoldReels;"
 +
-+/** Verify the actual APK, not obfuscated helper names copied from another Instagram build.
-+ * Only super.dispatchDraw; load helper; helper.draw(Canvas); return is accepted.
-+ * Never skip super.dispatchDraw (the native player, metadata and listeners). */
-+internal fun roundedCardHelper(draw: Method, superclass: String): MethodReference {
-+    val body = requireNotNull(draw.implementation) { "Fold: rounded card has no draw implementation" }
++internal fun invokeRegisters(instruction: Instruction): List<Int> = when (instruction) {
++    is FiveRegisterInstruction -> listOf(instruction.registerC, instruction.registerD,
++        instruction.registerE, instruction.registerF, instruction.registerG).take(instruction.registerCount)
++    is RegisterRangeInstruction -> (instruction.startRegister until
++        instruction.startRegister + instruction.registerCount).toList()
++    else -> emptyList()
++}
++private fun isSuper(i: Instruction) = i.opcode == Opcode.INVOKE_SUPER || i.opcode == Opcode.INVOKE_SUPER_RANGE
++private fun isGoto(i: Instruction) = i.opcode in setOf(Opcode.GOTO, Opcode.GOTO_16, Opcode.GOTO_32)
++private fun isIf(i: Instruction) = i.opcode.name.startsWith("IF_")
++private fun isDispatch(m: MethodReference) = m.name == "dispatchDraw" && m.returnType == "V" && m.parameterTypes == listOf(CANVAS)
++
++/** Code-unit addresses, never instruction indices in a DEX branch or try_item. */
++internal class DrawFlow(val method: Method) {
++    val body = requireNotNull(method.implementation) { "No implementation" }
 +    val code = body.instructions.toList()
-+    require(draw.definingClass == ROUNDED_CARD && draw.name == "dispatchDraw"
-+            && draw.parameterTypes == listOf(CANVAS) && draw.returnType == "V"
-+            && draw.accessFlags and AccessFlags.STATIC.value == 0
-+            && body.tryBlocks.isEmpty()
-+            && code.map { it.opcode } == listOf(Opcode.INVOKE_SUPER, Opcode.IGET_OBJECT, Opcode.INVOKE_VIRTUAL, Opcode.RETURN_VOID)) {
-+        "Fold: unsupported RoundedCornerFrameLayout dispatchDraw; refusing to bypass unknown native drawing"
++    val addresses = code.runningFold(0) { n, i -> n + i.codeUnits }
++    private val indices = addresses.dropLast(1).withIndex().associate { it.value to it.index }
++    val handlers = body.tryBlocks.flatMap { it.exceptionHandlers }.map { it.handlerCodeAddress }.toSet()
++    fun at(address: Int): Int = requireNotNull(indices[address]) { "Non-instruction address $address" }
++    fun target(index: Int) = at(addresses[index] + (code[index] as OffsetInstruction).codeOffset)
++    fun protected(index: Int) = body.tryBlocks.any {
++        addresses[index] >= it.startCodeAddress && addresses[index] < it.startCodeAddress + it.codeUnitCount
 +    }
-+    val self = body.registerCount - 2
-+    val superCall = code[0] as FiveRegisterInstruction
-+    val superRef = (code[0] as ReferenceInstruction).reference as MethodReference
-+    val field = code[1] as TwoRegisterInstruction
-+    val fieldRef = (code[1] as ReferenceInstruction).reference as FieldReference
-+    val call = code[2] as FiveRegisterInstruction
-+    val target = (code[2] as ReferenceInstruction).reference as MethodReference
-+    require(superCall.registerCount == 2 && superCall.registerC == self && superCall.registerD == self + 1
-+            && superRef.definingClass == superclass && superRef.name == "dispatchDraw"
-+            && superRef.parameterTypes == listOf(CANVAS) && superRef.returnType == "V"
-+            && field.registerB == self && field.registerA < self && fieldRef.definingClass == ROUNDED_CARD
-+            && call.registerCount == 2 && call.registerC == field.registerA && call.registerD == self + 1
-+            && target.definingClass == fieldRef.type && target.parameterTypes == listOf(CANVAS) && target.returnType == "V") {
-+        "Fold: rounded card draw dataflow changed"
++    fun validate() {
++        require(code.isNotEmpty() && addresses.last() < 65536) { "Empty/oversized dispatch body" }
++        code.forEachIndexed { index, insn ->
++            // Switch/payload methods need a different CFG analysis; do not guess their edges.
++            require(insn !is PayloadInstruction && (insn !is OffsetInstruction || isIf(insn) || isGoto(insn))) {
++                "Unsupported CFG instruction #$index ${insn.opcode}"
++            }
++            if (insn is OffsetInstruction) {
++                val t = target(index)
++                require(addresses[t] !in handlers && code[t].opcode != Opcode.MOVE_EXCEPTION) {
++                    "Normal branch #$index enters exception handler #$t"
++                }
++            }
++            if (insn is ReferenceInstruction && insn.reference is MethodReference) {
++                val ref = insn.reference as MethodReference
++                require(ref.definingClass != EXTENSION || ref.name != "skipRoundedCardDecoration") { "Hook already installed" }
++            }
++        }
++        body.tryBlocks.forEach { block ->
++            at(block.startCodeAddress)
++            require(block.codeUnitCount > 0 && block.startCodeAddress + block.codeUnitCount in addresses) { "Invalid try range" }
++            block.exceptionHandlers.forEach { require(code[at(it.handlerCodeAddress)].opcode == Opcode.MOVE_EXCEPTION) { "Invalid catch entry" } }
++        }
 +    }
-+    return target
++    fun reachable(): Set<Int> {
++        val seen = mutableSetOf<Int>(); val pending = java.util.ArrayDeque<Int>(); pending.add(0)
++        while (pending.isNotEmpty()) {
++            val index = pending.removeFirst()
++            require(index in code.indices) { "Control flow falls past method" }
++            if (!seen.add(index)) continue
++            val i = code[index]
++            if (isGoto(i)) pending.add(target(index))
++            else if (isIf(i)) { pending.add(target(index)); pending.add(index + 1) }
++            else if (i.opcode != Opcode.RETURN_VOID && i.opcode != Opcode.THROW) pending.add(index + 1)
++        }
++        return seen
++    }
++    fun parametersIntactBefore(index: Int, self: Int, reachable: Set<Int>): Boolean {
++        val predecessors = mutableMapOf<Int, MutableSet<Int>>()
++        for (n in reachable) {
++            val i = code[n]
++            val next = when {
++                isGoto(i) -> listOf(target(n))
++                isIf(i) -> listOf(target(n), n + 1)
++                i.opcode == Opcode.RETURN_VOID || i.opcode == Opcode.THROW -> emptyList()
++                else -> listOf(n + 1)
++            }
++            next.forEach { predecessors.getOrPut(it) { mutableSetOf() }.add(n) }
++        }
++        val seen = mutableSetOf<Int>(); val pending = java.util.ArrayDeque<Int>()
++        predecessors[index]?.forEach { pending.add(it) }
++        while (pending.isNotEmpty()) {
++            val n = pending.removeFirst(); if (!seen.add(n)) continue
++            val i = code[n]
++            if (i.opcode.setsRegister() && i is OneRegisterInstruction &&
++                (i.registerA == self || i.registerA == self + 1 ||
++                    i.opcode.setsWideRegister() && i.registerA + 1 == self)) return false
++            predecessors[n]?.forEach { pending.add(it) }
++        }
++        return true
++    }
++    /** No cleanup, field access, call or monitor operation may be skipped after this super. */
++    fun plainTail(index: Int): Boolean {
++        val seen = mutableSetOf<Int>(); var cursor = index + 1
++        while (cursor in code.indices && seen.add(cursor)) {
++            if (protected(cursor) || addresses[cursor] in handlers) return false
++            val i = code[cursor]
++            when {
++                i.opcode == Opcode.RETURN_VOID -> return true
++                i.opcode == Opcode.NOP -> cursor++
++                isGoto(i) -> cursor = target(cursor)
++                else -> return false
++            }
++        }
++        return false
++    }
 +}
 +
-+internal fun installRoundedCardHook(draw: MutableMethod, superclass: String, helper: Method) {
-+    val ref = roundedCardHelper(draw, superclass)
-+    require(helper.definingClass == ref.definingClass && helper.name == ref.name
-+            && helper.parameterTypes == ref.parameterTypes && helper.returnType == "V")
-+    val code = requireNotNull(helper.implementation).instructions.toList()
-+    // This helper draws the corner mask and the stroke using Paint/Path. Reject side effects,
-+    // text/image drawing, nested helper calls or a future player implementation here.
-+    val readsAndBranches = setOf(Opcode.IGET, Opcode.IGET_OBJECT, Opcode.CONST_4, Opcode.CONST_16,
-+        Opcode.CONST, Opcode.CMPL_FLOAT, Opcode.CMPG_FLOAT, Opcode.IF_LEZ, Opcode.IF_GEZ,
-+        Opcode.IF_LTZ, Opcode.IF_GTZ, Opcode.IF_EQZ, Opcode.IF_NEZ, Opcode.GOTO, Opcode.GOTO_16,
-+        Opcode.RETURN_VOID, Opcode.NOP, Opcode.INVOKE_VIRTUAL)
-+    require(code.all { it.opcode in readsAndBranches } && helper.implementation!!.tryBlocks.isEmpty()) {
-+        "Fold: rounded card helper is no longer a read-only corner/stroke painter"
++internal data class RoundedCardPlan(val method: Method, val parentCall: MethodReference,
++    val fallbackIndex: Int, val hierarchy: List<String>, val strategy: String)
++
++/** A single strategy: reuse the verified native plain dispatch semantics. R8 may reference
++ * an ancestor instead of the immediate superclass. Resolve that ancestry from the APK.
++ * Never infer obfuscated ancestry, a helper's purpose, or registers from an opcode list. */
++internal fun identifyRoundedCard(owner: ClassDef, lookup: (String) -> ClassDef?): RoundedCardPlan {
++    val candidates = owner.methods.filter { isDispatch(it) }.toList()
++    fun fail(reason: String): Nothing = throw IllegalArgumentException(
++        "Fold rounded dispatch: $reason\n" + roundedCardDiagnostic(owner))
++    if (owner.type != ROUNDED_CARD || candidates.size != 1) fail("expected one dispatchDraw(Canvas)V; candidates=${candidates.size}")
++    val draw = candidates.single()
++    try {
++        require(!AccessFlags.STATIC.isSet(draw.accessFlags) && !AccessFlags.ABSTRACT.isSet(draw.accessFlags)
++            && !AccessFlags.NATIVE.isSet(draw.accessFlags) && !AccessFlags.PRIVATE.isSet(draw.accessFlags)) { "Not an instance draw override" }
++        val hierarchy = mutableListOf<String>(); var parent = owner.superclass
++        while (parent != null) {
++            require(parent != owner.type && parent !in hierarchy && hierarchy.size < 32) { "Cyclic/deep hierarchy" }
++            hierarchy.add(parent)
++            if (parent == VIEW_GROUP) break
++            // These platform declarations are public Android API, not obfuscated guesses.
++            parent = if (parent == FRAME_LAYOUT) VIEW_GROUP else requireNotNull(lookup(parent)) {
++                "Unresolved superclass $parent"
++            }.superclass
++        }
++        require(hierarchy.lastOrNull() == VIEW_GROUP) { "Not a verified ViewGroup descendant: $hierarchy" }
++        val flow = DrawFlow(draw); flow.validate()
++        val self = flow.body.registerCount - 2
++        require(self > 0) { "No non-parameter local for entry guard" }
++        val reachable = flow.reachable()
++        val rejections = mutableListOf<String>()
++        val fallbacks = flow.code.indices.filter { index ->
++            val i = flow.code[index]
++            if (!isSuper(i)) return@filter false
++            val ref = (i as? ReferenceInstruction)?.reference as? MethodReference
++            val reason = when {
++                ref == null || !isDispatch(ref) -> "not dispatchDraw(Canvas)V"
++                ref.definingClass !in hierarchy -> "owner ${ref.definingClass} outside $hierarchy"
++                invokeRegisters(i) != listOf(self, self + 1) -> "arguments=${invokeRegisters(i)} expected=[$self,${self+1}]"
++                index !in reachable -> "not reachable from native entry"
++                !flow.parametersIntactBefore(index, self, reachable) -> "native path overwrites receiver/Canvas"
++                flow.protected(index) || flow.addresses[index] in flow.handlers -> "inside try/handler"
++                !flow.plainTail(index) -> "tail contains work/cleanup rather than return"
++                else -> null
++            }
++            if (reason != null) rejections.add("super#$index: $reason")
++            reason == null
++        }
++        require(fallbacks.size == 1) { "plain candidates=${fallbacks.size}; ${rejections.joinToString("; ")}" }
++        val index = fallbacks.single()
++        return RoundedCardPlan(draw, (flow.code[index] as ReferenceInstruction).reference as MethodReference,
++            index, hierarchy, "validated-native-plain-dispatch")
++    } catch (e: IllegalArgumentException) { fail(e.message ?: e.javaClass.simpleName) }
++}
++
++/** Build a replacement before touching the class. Keep register numbers and all native
++ * relative offsets unchanged. Shift try/debug/handler absolute addresses by an even prefix.
++ * The guard and its super call are OUTSIDE every native protected region. False enters
++ * the original first instruction; true draws native children and returns. No goto into
++ * an obfuscated native block, no helper whitelist, no skipped finally/cleanup. */
++internal fun installRoundedCardEntryBypass(owner: ClassDef, lookup: (String) -> ClassDef?): MutableMethod {
++    val plan = identifyRoundedCard(owner, lookup)
++    val draw = plan.method; val body = draw.implementation!!
++    val self = body.registerCount - 2
++    val prefix: List<Instruction> = listOf(
++        ImmutableInstruction3rc(Opcode.INVOKE_STATIC_RANGE, self, 1,
++            ImmutableMethodReference(EXTENSION, "skipRoundedCardDecoration", listOf("Landroid/view/View;"), "Z")),
++        ImmutableInstruction11x(Opcode.MOVE_RESULT, 0),
++        // Offset is from this if (address 4) to original entry (address 10).
++        ImmutableInstruction21t(Opcode.IF_EQZ, 0, 6),
++        ImmutableInstruction3rc(Opcode.INVOKE_SUPER_RANGE, self, 2, plan.parentCall),
++        ImmutableInstruction10x(Opcode.RETURN_VOID)
++    )
++    val shift = prefix.sumOf { it.codeUnits }
++    check(shift == 10 && shift % 2 == 0)
++    val native = body.instructions.map { ImmutableInstruction.of(it) }
++    val tries = body.tryBlocks.map { block -> ImmutableTryBlock(block.startCodeAddress + shift,
++        block.codeUnitCount, block.exceptionHandlers.map { ImmutableExceptionHandler(it.exceptionType, it.handlerCodeAddress + shift) }) }
++    val debug = body.debugItems.map { shiftedDebug(it, shift) }
++    val implementation = ImmutableMethodImplementation(body.registerCount, prefix + native, tries, debug)
++    return MutableMethod(ImmutableMethod(draw.definingClass, draw.name, draw.parameters, draw.returnType,
++        draw.accessFlags, draw.annotations, draw.hiddenApiRestrictions, implementation))
++}
++
++private fun shiftedDebug(item: DebugItem, shift: Int): DebugItem {
++    val address = item.codeAddress + shift
++    return when (item) {
++        is LineNumber -> object : LineNumber by item { override fun getCodeAddress() = address }
++        is StartLocal -> object : StartLocal by item { override fun getCodeAddress() = address }
++        is EndLocal -> object : EndLocal by item { override fun getCodeAddress() = address }
++        is RestartLocal -> object : RestartLocal by item { override fun getCodeAddress() = address }
++        is PrologueEnd -> object : PrologueEnd by item { override fun getCodeAddress() = address }
++        is EpilogueBegin -> object : EpilogueBegin by item { override fun getCodeAddress() = address }
++        is SetSourceFile -> object : SetSourceFile by item { override fun getCodeAddress() = address }
++        else -> error("Fold: unsupported debug item ${item.debugItemType}; refusing partial rewrite")
 +    }
-+    val calls = code.filter { it.opcode == Opcode.INVOKE_VIRTUAL }
-+    require(calls.size == 2 && calls.all {
-+        val method = (it as ReferenceInstruction).reference as? MethodReference
-+        method?.definingClass == CANVAS && method.name == "drawPath"
-+            && method.parameterTypes == listOf("Landroid/graphics/Path;", "Landroid/graphics/Paint;") && method.returnType == "V"
-+    }) { "Fold: rounded card helper does not exclusively draw the corner mask and stroke" }
-+    // Reuse the helper register immediately BEFORE its native iget initializes it.
-+    // Both branches are type-safe; parameters and the children's draw are untouched.
-+    val local = (draw.implementation!!.instructions.toList()[1] as TwoRegisterInstruction).registerA
-+    draw.addInstructionsWithLabels(1, """
-+        invoke-static/range {p0 .. p0}, Lapp/morphe/extension/instagram/patches/reels/FoldReels;->skipRoundedCardDecoration(Landroid/view/View;)Z
-+        move-result v$local
-+        if-eqz v$local, :fold_native_corners
-+        return-void
-+        :fold_native_corners
-+        nop
-+    """)
++}
++
++/** Bounded structural report; no strings, media, account information or whole APK dump. */
++internal fun roundedCardDiagnostic(owner: ClassDef): String = buildString {
++    append("class=${owner.type} super=${owner.superclass} interfaces=${owner.interfaces} flags=${owner.accessFlags}\n")
++    owner.methods.filter { it.name == "dispatchDraw" }.take(4).forEach { method ->
++        val body = method.implementation
++        append("method=$method flags=${method.accessFlags} registers=${body?.registerCount}\n")
++        val code = body?.instructions?.toList() ?: emptyList()
++        append("instructions=${code.size} summary=${code.groupingBy { it.opcode }.eachCount()}\n")
++        var address = 0
++        code.take(160).forEachIndexed { index, i ->
++            val ref = (i as? ReferenceInstruction)?.reference
++            if (ref is MethodReference || ref is FieldReference || i is OffsetInstruction || i.opcode == Opcode.MOVE_EXCEPTION) {
++                append("#$index @$address ${i.opcode}")
++                if (ref is MethodReference) append(" $ref args=${invokeRegisters(i)}")
++                if (ref is FieldReference) append(" $ref")
++                if (i is TwoRegisterInstruction) append(" regs=${i.registerA},${i.registerB}")
++                else if (i is OneRegisterInstruction) append(" reg=${i.registerA}")
++                if (i is OffsetInstruction) append(" target=${address + i.codeOffset}")
++                append('\n')
++            }
++            address += i.codeUnits
++        }
++        body?.tryBlocks?.forEach { b -> append("try=${b.startCodeAddress}..${b.startCodeAddress+b.codeUnitCount} catches=" +
++            b.exceptionHandlers.joinToString { "${it.exceptionType ?: "all"}@${it.handlerCodeAddress}" } + "\n") }
++    }
 +}
 diff --git a/patches/src/main/kotlin/app/morphe/util/VerifyFoldBundle.kt b/patches/src/main/kotlin/app/morphe/util/VerifyFoldBundle.kt
 new file mode 100644
@@ -5033,70 +5200,187 @@ index c76b16f..6cfd00e 100644
      <string name="piko_disable_ads">Disable ads</string>
 diff --git a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
 new file mode 100644
-index 0000000..f4cb8ab
+index 0000000..df4f38c
 --- /dev/null
 +++ b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,179 @@
 +package app.crimera.patches.instagram.misc.reels
 +
-+import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 +import app.morphe.patcher.util.smali.toInstruction
-+import com.android.tools.smali.dexlib2.AccessFlags
-+import com.android.tools.smali.dexlib2.Opcode
++import com.android.tools.smali.dexlib2.*
++import com.android.tools.smali.dexlib2.iface.*
++import com.android.tools.smali.dexlib2.iface.instruction.*
++import com.android.tools.smali.dexlib2.iface.debug.LineNumber
++import com.android.tools.smali.dexlib2.immutable.*
++import com.android.tools.smali.dexlib2.immutable.debug.ImmutableLineNumber
++import com.android.tools.smali.dexlib2.immutable.instruction.*
 +import com.android.tools.smali.dexlib2.builder.MethodImplementationBuilder
-+import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
-+import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
++import com.android.tools.smali.dexlib2.builder.instruction.BuilderInstruction21t
++import com.android.tools.smali.dexlib2.writer.pool.DexPool
 +import org.junit.Assert.*
 +import org.junit.Test
++import java.nio.file.Files
 +
-+/** Synthetic bytecode contract, deliberately not represented as a test of Instagram 439's APK. */
++/** References and fields are SYNTHETIC. The 27-opcode shape comes from the user's
++ * 439 error; it is not a captured Instagram DEX and cannot prove device compatibility. */
 +class RoundedCardHookTest {
-+    private val painter = "LX/UnknownObfuscatedPainter;"
-+    private val superclass = "Landroid/widget/FrameLayout;"
-+    private fun method(owner: String, name: String, registers: Int, vararg code: String): MutableMethod {
-+        val body = MethodImplementationBuilder(registers).apply { code.forEach { addInstruction(it.toInstruction()) } }.methodImplementation
-+        return MutableMethod(ImmutableMethod(owner, name,
-+            listOf(ImmutableMethodParameter("Landroid/graphics/Canvas;", emptySet(), null)), "V",
-+            AccessFlags.PUBLIC.value, emptySet(), emptySet(), body))
++    private val base = "LX/ActualParent;"
++    private val frame = "Landroid/widget/FrameLayout;"
++    private val canvas = "Landroid/graphics/Canvas;"
++    private fun cls(methods: List<Method>, parent: String = base, type: String = ROUNDED_CARD) =
++        ImmutableClassDef(type, AccessFlags.PUBLIC.value, parent, listOf("LX/NativeInterface;"), null, emptyList(), emptyList(), methods)
++    private val parent = cls(emptyList(), frame, base)
++    private fun lookup(type: String): ClassDef? = if (type == base) parent else null
++    private fun method(body: MethodImplementation, flags: Int = AccessFlags.PROTECTED.value) =
++        ImmutableMethod(ROUNDED_CARD, "dispatchDraw", listOf(ImmutableMethodParameter(canvas, emptySet(), null)),
++            "V", flags, emptySet(), emptySet(), body)
++    private fun simple(vararg instructions: String, registers: Int = 3): Method = method(
++        MethodImplementationBuilder(registers).apply { instructions.forEach { addInstruction(it.toInstruction()) } }.methodImplementation)
++    private fun install(m: Method) = installRoundedCardEntryBypass(cls(listOf(m)), ::lookup)
++    private fun plan(m: Method) = identifyRoundedCard(cls(listOf(m)), ::lookup)
++    private fun rejected(m: Method, reason: String) {
++        val before = m.implementation!!.instructions.map { ImmutableInstruction.of(it) }
++        try { install(m); fail("accepted invalid method") } catch (e: IllegalArgumentException) {
++            assertTrue(e.message, e.message!!.contains(reason))
++        }
++        assertEquals(before.map { it.opcode }, m.implementation!!.instructions.map { it.opcode })
 +    }
-+    private fun draw(extra: String? = null) = method(ROUNDED_CARD, "dispatchDraw", 3,
-+        "invoke-super {v1, v2}, $superclass->dispatchDraw(Landroid/graphics/Canvas;)V",
-+        "iget-object v0, v1, $ROUNDED_CARD->whatever:$painter",
-+        extra ?: "invoke-virtual {v0, v2}, $painter->differentName(Landroid/graphics/Canvas;)V", "return-void")
-+    private fun helper(extra: String? = null) = method(painter, "differentName", 5,
-+        "iget-object v0, v3, $painter->path:Landroid/graphics/Path;",
-+        "iget-object v1, v3, $painter->paint:Landroid/graphics/Paint;",
-+        "invoke-virtual {v4, v0, v1}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V",
-+        extra ?: "invoke-virtual {v4, v0, v1}, Landroid/graphics/Canvas;->drawPath(Landroid/graphics/Path;Landroid/graphics/Paint;)V", "return-void")
-+    @Test fun preservesChildrenAndGuardsOnlyVerifiedDecorationRegardlessOfHelperName() {
-+        val draw = draw(); installRoundedCardHook(draw, superclass, helper())
-+        val code=draw.implementation!!.instructions.toList()
-+        assertEquals(Opcode.INVOKE_SUPER,code.first().opcode)
-+        assertEquals(1,code.count { it.opcode == Opcode.INVOKE_SUPER })
-+        assertEquals(Opcode.INVOKE_STATIC_RANGE,code[1].opcode)
-+        assertEquals(Opcode.IGET_OBJECT,code[6].opcode)
-+        assertEquals(Opcode.INVOKE_VIRTUAL,code[7].opcode)
++    private fun reportedShape(padding: Boolean = false, shift: Int = 0, refOwner: String = frame): Method {
++        val self = 5 + shift; val arg = self + 1
++        val b = MethodImplementationBuilder(7 + shift)
++        fun emit(s: String) { b.addInstruction(s.toInstruction()) }
++        val plain = b.getLabel("plain")
++        if (padding) emit("nop")
++        emit("const/4 v0, 0")
++        emit("invoke-static {v$arg, v0}, LX/Checks;->check($canvas" + "I)V")
++        emit("iget-object v0, v$self, $ROUNDED_CARD->h:LX/Helper;")
++        b.addInstruction(BuilderInstruction21t(Opcode.IF_EQZ, 0, plain))
++        emit("iget-object v1, v0, LX/Helper;->renderer:LX/Session;")
++        b.addInstruction(BuilderInstruction21t(Opcode.IF_EQZ, 1, plain))
++        emit("iget v2, v$self, $ROUNDED_CARD->width:I")
++        emit("iget v3, v$self, $ROUNDED_CARD->height:I")
++        emit("invoke-virtual {v$arg}, $canvas->save()I")
++        emit("iget-object v1, v0, LX/Helper;->renderer:LX/Session;")
++        emit("iget v2, v$self, $ROUNDED_CARD->width:I")
++        emit("iget v3, v$self, $ROUNDED_CARD->height:I")
++        emit("invoke-interface {v1, v$arg, v2, v3}, LX/Session;->begin($canvas" + "II)$canvas")
++        emit("move-result-object v4")
++        val start = b.addLabel("try_start")
++        emit("invoke-super {v$self, v4}, $refOwner->dispatchDraw($canvas)V")
++        val end = b.addLabel("try_end")
++        emit("invoke-interface {v1}, LX/Session;->end()V")
++        emit("iget v2, v$self, $ROUNDED_CARD->width:I")
++        emit("iget v3, v$self, $ROUNDED_CARD->height:I")
++        emit("iget v4, v$self, $ROUNDED_CARD->radius:I")
++        emit("invoke-interface {v1, v2, v3, v4}, LX/Session;->decorate(III)V")
++        emit("return-void")
++        val handler = b.addLabel("handler")
++        emit("move-exception v0")
++        emit("iget-object v1, v$self, $ROUNDED_CARD->cleanup:LX/Session;")
++        emit("invoke-interface {v1}, LX/Session;->end()V")
++        emit("throw v0")
++        b.addLabel("plain")
++        if (padding) { emit("const/4 v2, 0"); emit("nop") }
++        emit("invoke-super {v$self, v$arg}, $refOwner->dispatchDraw($canvas)V")
++        if (padding) emit("nop")
++        emit("return-void")
++        b.addCatch(start, end, handler)
++        return method(b.methodImplementation)
 +    }
-+    @Test fun rejectsUnexpectedDispatchWithoutPartiallyMutatingIt() {
-+        val draw=draw("invoke-virtual {v1, v2}, $painter->differentName(Landroid/graphics/Canvas;)V")
-+        try { installRoundedCardHook(draw, superclass, helper()); fail("wrong receiver accepted") } catch (_: IllegalArgumentException) {}
-+        assertEquals(4,draw.implementation!!.instructions.count())
++    @Test fun acceptsReported439ShapeUsingAncestorReference() {
++        val m = reportedShape(); assertEquals(27, m.implementation!!.instructions.count())
++        val p = plan(m); assertEquals(25, p.fallbackIndex); assertEquals(frame, p.parentCall.definingClass)
++        assertEquals(listOf(base, frame, "Landroid/view/ViewGroup;"), p.hierarchy)
 +    }
-+    @Test fun rejectsAHelperThatWritesNativeState() {
-+        val draw=draw()
-+        try { installRoundedCardHook(draw, superclass, helper("iput-object v0, v3, $painter->path:Landroid/graphics/Path;")); fail("side effect accepted") }
-+        catch (_: IllegalArgumentException) {}
-+        assertEquals(4,draw.implementation!!.instructions.count())
++    @Test fun acceptsHarmlessInstructionsWithoutAnOpcodeWhitelist() { assertNotNull(plan(reportedShape(padding = true))) }
++    @Test fun acceptsDifferentLocalAndParameterRegisters() {
++        val result = install(reportedShape(shift = 2)); assertEquals(listOf(7, 8), invokeRegisters(result.implementation!!.instructions.toList()[3]))
 +    }
-+    @Test fun rejectsNonDecorationCanvasCalls() {
-+        val draw=draw()
-+        try { installRoundedCardHook(draw, superclass, helper("invoke-virtual {v4, v0}, Landroid/graphics/Canvas;->drawColor(I)V")); fail("fill accepted") }
-+        catch (_: IllegalArgumentException) {}
-+        assertEquals(4,draw.implementation!!.instructions.count())
++    @Test fun acceptsRangeEncodedParentCall() {
++        assertNotNull(plan(simple("invoke-super/range {v1 .. v2}, $base->dispatchDraw($canvas)V", "return-void")))
 +    }
-+    @Test fun refusesASecondInjection() {
-+        val draw=draw(); installRoundedCardHook(draw, superclass, helper())
-+        try { installRoundedCardHook(draw, superclass, helper()); fail("double injection") } catch (_: IllegalArgumentException) {}
++    @Test fun rejectsTwoReachablePlainCandidates() {
++        val b = MethodImplementationBuilder(3); val other = b.getLabel("other")
++        b.addInstruction("const/4 v0, 0".toInstruction()); b.addInstruction(BuilderInstruction21t(Opcode.IF_EQZ, 0, other))
++        b.addInstruction("invoke-super {v1, v2}, $frame->dispatchDraw($canvas)V".toInstruction()); b.addInstruction("return-void".toInstruction())
++        b.addLabel("other"); b.addInstruction("invoke-super {v1, v2}, $frame->dispatchDraw($canvas)V".toInstruction()); b.addInstruction("return-void".toInstruction())
++        rejected(method(b.methodImplementation), "plain candidates=2")
++    }
++    @Test fun rejectsNoCandidateAndReportsActualReferences() {
++        rejected(simple("invoke-super {v1, v2}, LX/Unrelated;->dispatchDraw($canvas)V", "return-void"), "outside")
++    }
++    @Test fun rejectsUnresolvedAncestry() {
++        try { identifyRoundedCard(cls(listOf(reportedShape()))) { null }; fail() }
++        catch(e: IllegalArgumentException) { assertTrue(e.message!!.contains("Unresolved superclass")) }
++    }
++    @Test fun rejectsStaticMethod() {
++        rejected(method(reportedShape().implementation!!, AccessFlags.PUBLIC.value or AccessFlags.STATIC.value), "instance draw override")
++    }
++    @Test fun rejectsWrongReceiverOrCanvas() {
++        rejected(simple("invoke-super {v1, v0}, $frame->dispatchDraw($canvas)V", "return-void"), "arguments=")
++    }
++    @Test fun rejectsParameterOverwrittenOnFallbackPath() {
++        rejected(simple("const/4 v2, 0", "invoke-super {v1, v2}, $frame->dispatchDraw($canvas)V", "return-void"), "overwrites receiver/Canvas")
++    }
++    @Test fun rejectsNoScratchRegisterInsteadOfOverwritingThis() {
++        rejected(simple("invoke-super {v0, v1}, $frame->dispatchDraw($canvas)V", "return-void", registers = 2), "No non-parameter local")
++    }
++    @Test fun rejectsCleanupAfterSuper() {
++        rejected(simple("invoke-super {v1, v2}, $frame->dispatchDraw($canvas)V", "invoke-static {}, LX/Cleanup;->end()V", "return-void"), "tail contains work")
++    }
++    @Test fun rejectsUnreachableFallback() {
++        rejected(simple("return-void", "invoke-super {v1, v2}, $frame->dispatchDraw($canvas)V", "return-void"), "not reachable")
++    }
++    @Test fun rejectsProtectedPlainCall() {
++        val b = MethodImplementationBuilder(3); val start = b.addLabel("start")
++        b.addInstruction("invoke-super {v1, v2}, $frame->dispatchDraw($canvas)V".toInstruction()); val end = b.addLabel("end")
++        b.addInstruction("return-void".toInstruction()); val handler = b.addLabel("handler")
++        b.addInstruction("move-exception v0".toInstruction()); b.addInstruction("throw v0".toInstruction()); b.addCatch(start, end, handler)
++        rejected(method(b.methodImplementation), "inside try/handler")
++    }
++    @Test fun guardEntersOriginalInstructionZeroAndNeverNativeFallbackOrHandler() {
++        val before = reportedShape(); val after = install(before); val a = after.implementation!!.instructions.toList()
++        assertEquals(Opcode.INVOKE_STATIC_RANGE, a[0].opcode); assertEquals(Opcode.MOVE_RESULT, a[1].opcode)
++        assertEquals(Opcode.IF_EQZ, a[2].opcode); assertEquals(6, (a[2] as OffsetInstruction).codeOffset)
++        assertEquals(Opcode.RETURN_VOID, a[4].opcode); assertEquals(before.implementation!!.instructions.first().opcode, a[5].opcode)
++        assertEquals(10, a.take(5).sumOf { it.codeUnits })
++        assertEquals(before.implementation!!.registerCount, after.implementation!!.registerCount)
++        assertEquals(before.implementation!!.instructions.map { it.opcode }, a.drop(5).map { it.opcode })
++        val oldTry = before.implementation!!.tryBlocks.single(); val newTry = after.implementation!!.tryBlocks.single()
++        assertEquals(oldTry.startCodeAddress + 10, newTry.startCodeAddress)
++        assertEquals(oldTry.codeUnitCount, newTry.codeUnitCount)
++        assertEquals(oldTry.exceptionHandlers.single().handlerCodeAddress + 10, newTry.exceptionHandlers.single().handlerCodeAddress)
++    }
++    @Test fun preservesDebugAddresses() {
++        val original = reportedShape(); val b = original.implementation!!
++        val m = method(ImmutableMethodImplementation(b.registerCount, b.instructions, b.tryBlocks, listOf(ImmutableLineNumber(0, 42))))
++        val line = install(m).implementation!!.debugItems.single() as LineNumber
++        assertEquals(10, line.codeAddress); assertEquals(42, line.lineNumber)
++    }
++    @Test fun refusesSecondInjection() { rejected(install(reportedShape()), "Hook already installed") }
++    @Test fun serializesAndReloadsDexWithNativeBranchesAndHandlersIntact() {
++        val original = reportedShape(); val patched = install(original)
++        val file = Files.createTempFile("fold-guard-", ".dex").toFile()
++        try {
++            DexPool.writeTo(file.path, ImmutableDexFile(Opcodes.getDefault(), listOf(cls(listOf(patched)), parent)))
++            val loaded = DexFileFactory.loadDexFile(file, Opcodes.getDefault()).classes.single { it.type == ROUNDED_CARD }.methods.single()
++            val code = loaded.implementation!!.instructions.toList(); val flow = DrawFlow(loaded)
++            assertEquals(5, flow.target(2))
++            val nativeFlow = DrawFlow(original)
++            nativeFlow.code.forEachIndexed { index, insn ->
++                if(insn is OffsetInstruction) assertEquals(nativeFlow.target(index) + 5, flow.target(index + 5))
++                val a = insn as? ReferenceInstruction; val b = code[index+5] as? ReferenceInstruction
++                assertEquals(a?.reference?.toString(), b?.reference?.toString())
++            }
++            val handler = loaded.implementation!!.tryBlocks.single().exceptionHandlers.single().handlerCodeAddress
++            assertEquals(Opcode.MOVE_EXCEPTION, code[flow.at(handler)].opcode)
++            assertTrue(loaded.implementation!!.tryBlocks.all { it.startCodeAddress >= 10 })
++        } finally { file.delete() }
++    }
++    @Test fun diagnosticsAreBoundedAndExcludeStringLiterals() {
++        val m = simple("const-string v0, \"PRIVATE_SENTINEL\"", "invoke-super {v1, v2}, $frame->dispatchDraw($canvas)V", "return-void")
++        val d = roundedCardDiagnostic(cls(listOf(m))); assertFalse(d.contains("PRIVATE_SENTINEL"))
++        assertTrue(d.contains(frame)); assertTrue(d.contains("args=[1, 2]")); assertTrue(d.length < 16000)
 +    }
 +}
 diff --git a/tests/fold-reels/FoldReelsPolicyTest.java b/tests/fold-reels/FoldReelsPolicyTest.java
