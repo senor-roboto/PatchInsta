@@ -1,3 +1,10 @@
+## 4.1.7 — candidat, non publié dans le flux Morphe
+
+- Instagram/Fold : identification du dispatch natif par hiérarchie, prototype, arguments et contrôle de flux ; garde séparé des try/catch.
+- Consolidation du patch source ; suppression des trois hotfixes et des anciennes fonctions inutilisées.
+- 19 tests bytecode, audit APK/DEX hors ligne et contrôle des quatre points d'entrée dans l'extension compilée.
+- Diagnostic runtime correctement versionné. Rendu et patch complet de l'APK 439 encore à confirmer.
+
 # 4.1.6
 
 - Corrige le troisième refus observé sur le vrai Instagram `439.0.0.37.89`. Le log 4.1.5 prouve que `RoundedCornerFrameLayout.dispatchDraw(Canvas)` possède désormais un CFG complet avec clipping, appels d’interface et handler R8 ; les anciens matchers « quatre instructions » sont donc abandonnés pour la production.

@@ -4851,10 +4851,10 @@ index 0000000..3278d22
 +}
 diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
 new file mode 100644
-index 0000000..e6211d8
+index 0000000..a899e0a
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
-@@ -0,0 +1,250 @@
+@@ -0,0 +1,251 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.crimera.patches.instagram.misc.reels
 +
@@ -4874,6 +4874,7 @@ index 0000000..e6211d8
 +internal const val ROUNDED_CARD = "Lcom/instagram/ui/widget/roundedcornerlayout/RoundedCornerFrameLayout;"
 +private const val CANVAS = "Landroid/graphics/Canvas;"
 +private const val VIEW_GROUP = "Landroid/view/ViewGroup;"
++private const val VIEW = "Landroid/view/View;"
 +private const val FRAME_LAYOUT = "Landroid/widget/FrameLayout;"
 +private const val EXTENSION = "Lapp/morphe/extension/instagram/patches/reels/FoldReels;"
 +
@@ -5000,13 +5001,13 @@ index 0000000..e6211d8
 +        while (parent != null) {
 +            require(parent != owner.type && parent !in hierarchy && hierarchy.size < 32) { "Cyclic/deep hierarchy" }
 +            hierarchy.add(parent)
-+            if (parent == VIEW_GROUP) break
++            if (parent == VIEW) break
 +            // These platform declarations are public Android API, not obfuscated guesses.
-+            parent = if (parent == FRAME_LAYOUT) VIEW_GROUP else requireNotNull(lookup(parent)) {
++            parent = if (parent == FRAME_LAYOUT) VIEW_GROUP else if (parent == VIEW_GROUP) VIEW else requireNotNull(lookup(parent)) {
 +                "Unresolved superclass $parent"
 +            }.superclass
 +        }
-+        require(hierarchy.lastOrNull() == VIEW_GROUP) { "Not a verified ViewGroup descendant: $hierarchy" }
++        require(VIEW_GROUP in hierarchy && hierarchy.lastOrNull() == VIEW) { "Not a verified ViewGroup descendant: $hierarchy" }
 +        val flow = DrawFlow(draw); flow.validate()
 +        val self = flow.body.registerCount - 2
 +        require(self > 0) { "No non-parameter local for entry guard" }
@@ -5107,10 +5108,10 @@ index 0000000..e6211d8
 +}
 diff --git a/patches/src/main/kotlin/app/morphe/util/VerifyFoldBundle.kt b/patches/src/main/kotlin/app/morphe/util/VerifyFoldBundle.kt
 new file mode 100644
-index 0000000..11c79a7
+index 0000000..9accfb3
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/morphe/util/VerifyFoldBundle.kt
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,54 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.util
 +
@@ -5118,12 +5119,33 @@ index 0000000..11c79a7
 +import com.google.gson.GsonBuilder
 +import java.io.File
 +import java.util.jar.JarFile
++import com.android.tools.smali.dexlib2.Opcodes
++import com.android.tools.smali.dexlib2.AccessFlags
++import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile
 +
 +/** Load the actual compiled bundle with Morphe's loader, before advertising it to Manager. */
 +fun main(args: Array<String>) {
 +    val bundle = File("build/libs").listFiles { file -> file.extension == "mpp" }!!.single()
 +    val version = JarFile(bundle).use { it.manifest.mainAttributes.getValue("Version") }
 +    check(version == args.single()) { "Bundle manifest version does not match Gradle" }
++    JarFile(bundle).use { jar ->
++        val entry = jar.entries().asSequence().single { it.name.contains("instagram") && it.name.endsWith(".mpe") }
++        val dex = jar.getInputStream(entry).buffered().use { DexBackedDexFile.fromInputStream(Opcodes.getDefault(), it) }
++        val entryClass = dex.classes.single { it.type == "Lapp/morphe/extension/instagram/patches/reels/FoldReels;" }
++        val expected = mapOf(
++            "skipRoundedCardDecoration" to (listOf("Landroid/view/View;") to "Z"),
++            "attachViewer" to (listOf("Landroid/view/View;") to "V"),
++            "beforeViewerDraw" to (listOf("Landroid/view/View;") to "V"),
++            "routeTouch" to (listOf("Landroid/view/View;", "Landroid/view/MotionEvent;") to "Z")
++        )
++        expected.forEach { (name, prototype) ->
++            val method = entryClass.methods.single { it.name == name && it.parameterTypes == prototype.first && it.returnType == prototype.second }
++            check(AccessFlags.PUBLIC.isSet(method.accessFlags) && AccessFlags.STATIC.isSet(method.accessFlags) && method.implementation != null) {
++                "Missing public static executable Fold hook: $name"
++            }
++        }
++        println("MPP Instagram extension verified: all 4 Fold hook prototypes are public static and executable")
++    }
 +    val patches = loadPatchesFromJar(setOf(bundle))
 +    val fold = patches.single { it.name == "Adaptive Fold Reels" }
 +    val instagram = fold.compatibility!!.single { it.packageName == "com.instagram.android" }
@@ -5274,10 +5296,10 @@ index c76b16f..6cfd00e 100644
      <string name="piko_disable_ads">Disable ads</string>
 diff --git a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
 new file mode 100644
-index 0000000..df4f38c
+index 0000000..fafe20f
 --- /dev/null
 +++ b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
-@@ -0,0 +1,179 @@
+@@ -0,0 +1,187 @@
 +package app.crimera.patches.instagram.misc.reels
 +
 +import app.morphe.patcher.util.smali.toInstruction
@@ -5364,7 +5386,9 @@ index 0000000..df4f38c
 +    @Test fun acceptsReported439ShapeUsingAncestorReference() {
 +        val m = reportedShape(); assertEquals(27, m.implementation!!.instructions.count())
 +        val p = plan(m); assertEquals(25, p.fallbackIndex); assertEquals(frame, p.parentCall.definingClass)
-+        assertEquals(listOf(base, frame, "Landroid/view/ViewGroup;"), p.hierarchy)
++        assertNotNull(plan(reportedShape(refOwner = "Landroid/view/ViewGroup;")))
++        assertNotNull(plan(reportedShape(refOwner = "Landroid/view/View;")))
++        assertEquals(listOf(base, frame, "Landroid/view/ViewGroup;", "Landroid/view/View;"), p.hierarchy)
 +    }
 +    @Test fun acceptsHarmlessInstructionsWithoutAnOpcodeWhitelist() { assertNotNull(plan(reportedShape(padding = true))) }
 +    @Test fun acceptsDifferentLocalAndParameterRegisters() {
@@ -5424,6 +5448,12 @@ index 0000000..df4f38c
 +        assertEquals(oldTry.startCodeAddress + 10, newTry.startCodeAddress)
 +        assertEquals(oldTry.codeUnitCount, newTry.codeUnitCount)
 +        assertEquals(oldTry.exceptionHandlers.single().handlerCodeAddress + 10, newTry.exceptionHandlers.single().handlerCodeAddress)
++        val body = before.implementation!!
++        val entryProtected = method(ImmutableMethodImplementation(body.registerCount, body.instructions,
++            listOf(ImmutableTryBlock(0, 4, oldTry.exceptionHandlers)) + body.tryBlocks, body.debugItems))
++        val entryRewritten = install(entryProtected)
++        assertEquals(10, entryRewritten.implementation!!.tryBlocks.minOf { it.startCodeAddress })
++
 +    }
 +    @Test fun preservesDebugAddresses() {
 +        val original = reportedShape(); val b = original.implementation!!
