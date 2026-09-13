@@ -104,7 +104,7 @@ index 0000000..366f539
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
 new file mode 100644
-index 0000000..be779ee
+index 0000000..ddaf4a2
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
 @@ -0,0 +1,600 @@
@@ -390,7 +390,7 @@ index 0000000..be779ee
 +
 +    private static void showDiagnostic(Activity activity) {
 +        Watcher.Tracker tracker = watcher.trackers.get(activity);
-+        final String report = tracker == null ? "PatchInsta 4.1.3\ntracker=none\n"
++        final String report = tracker == null ? "PatchInsta 4.1.7\ntracker=none\n"
 +                : tracker.diagnosticSnapshot != null ? tracker.diagnosticSnapshot : tracker.buildDiagnostic("after-dialog; NOT a live fullscreen snapshot");
 +        TextView text = new TextView(activity); text.setText(report); text.setTextIsSelectable(true);
 +        text.setTextSize(11); text.setPadding(dp(activity, 16), 0, dp(activity, 16), 0);
@@ -491,11 +491,11 @@ index 0000000..be779ee
 +                // Invoked before the FIRST settings dialog takes focus. Never rebuild a
 +                // "live" report from the restored/empty state underneath that dialog.
 +                try { diagnosticSnapshot = buildDiagnostic("before-layout-menu"); }
-+                catch (RuntimeException error) { diagnosticSnapshot = "PatchInsta 4.1.3\ndiagnostic failed=" + error.getClass().getName(); }
++                catch (RuntimeException error) { diagnosticSnapshot = "PatchInsta 4.1.7\ndiagnostic failed=" + error.getClass().getName(); }
 +            }
 +            String buildDiagnostic(String phase) {
 +                Activity a = owner.get();
-+                StringBuilder out = new StringBuilder("PatchInsta 4.1.3\ncapture=").append(phase)
++                StringBuilder out = new StringBuilder("PatchInsta 4.1.7\ncapture=").append(phase)
 +                        .append(" uptimeMs=").append(SystemClock.uptimeMillis()).append('\n');
 +                out.append("installed=").append(installed).append(" nativePolicy=").append(noTwoPane ? "no_two_pane" : "v4").append('\n');
 +                diagnostics(out);
@@ -764,7 +764,7 @@ index 0000000..625afd8
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsCardChrome.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsCardChrome.java
 new file mode 100644
-index 0000000..7ffc204
+index 0000000..8a00558
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsCardChrome.java
 @@ -0,0 +1,194 @@
@@ -921,7 +921,7 @@ index 0000000..7ffc204
 +                    .append(" sibling=").append(s.sibling).append(" bg=").append(FoldReelsDiagnostics.type(s.bg)).append(" fg=").append(FoldReelsDiagnostics.type(s.fg))
 +                    .append(" cleared=").append(s.background).append(',').append(s.foreground)
 +                    .append(" imageCleared=").append(s.image).append(" elevationRemoved=").append(s.shadow).append('\n');
-+            if (s.nativeLease != null) out.append(" native-post-children-corners enabled=").append(s.nativeLease.enabled)
++            if (s.nativeLease != null) out.append(" native-rounded-dispatch enabled=").append(s.nativeLease.enabled)
 +                    .append(" drawCalls=").append(s.nativeLease.draws).append(" suppressed=").append(s.nativeLease.suppressed).append('\n');
 +        }
 +    }
@@ -2152,7 +2152,7 @@ index 0000000..7ec382e
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsNativeDecoration.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsNativeDecoration.java
 new file mode 100644
-index 0000000..dfa137c
+index 0000000..2ea0146
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsNativeDecoration.java
 @@ -0,0 +1,45 @@
@@ -2163,7 +2163,7 @@ index 0000000..dfa137c
 +import java.lang.ref.WeakReference;
 +import java.util.WeakHashMap;
 +
-+/** Leases for the bytecode-verified, post-children corner/stroke drawing only.
++/** Leases for the structurally verified native plain dispatch of a rounded wrapper.
 + * No Paint, radius, native helper, listener or media state is ever overwritten. */
 +final class FoldReelsNativeDecoration {
 +    static final String CLASS = "com.instagram.ui.widget.roundedcornerlayout.RoundedCornerFrameLayout";
@@ -4565,10 +4565,10 @@ index 0000000..1205e1a
 +}
 diff --git a/extensions/instagram/src/test/java/com/instagram/ui/widget/roundedcornerlayout/RoundedCornerFrameLayout.java b/extensions/instagram/src/test/java/com/instagram/ui/widget/roundedcornerlayout/RoundedCornerFrameLayout.java
 new file mode 100644
-index 0000000..2d8eb34
+index 0000000..f8f709f
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/com/instagram/ui/widget/roundedcornerlayout/RoundedCornerFrameLayout.java
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,22 @@
 +package com.instagram.ui.widget.roundedcornerlayout;
 +
 +import android.content.Context;
@@ -4583,10 +4583,12 @@ index 0000000..2d8eb34
 +    public int childrenDraws, decorationDraws;
 +    public RoundedCornerFrameLayout(Context context) { super(context); stroke.setColor(0xffff0000); stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeWidth(2); }
 +    @Override protected void dispatchDraw(Canvas canvas) {
-+        super.dispatchDraw(canvas); childrenDraws++;
-+        if (!FoldReels.skipRoundedCardDecoration(this)) {
-+            decorationDraws++; canvas.drawRect(1,1,getWidth()-1,getHeight()-1,stroke);
++        if (FoldReels.skipRoundedCardDecoration(this)) {
++            super.dispatchDraw(canvas); childrenDraws++;
++            return;
 +        }
++        super.dispatchDraw(canvas); childrenDraws++;
++        decorationDraws++; canvas.drawRect(1,1,getWidth()-1,getHeight()-1,stroke);
 +    }
 +}
 diff --git a/extensions/instagram/src/test/java/instagram/features/clips/viewer/actionbar/ClipsViewerActionBar.java b/extensions/instagram/src/test/java/instagram/features/clips/viewer/actionbar/ClipsViewerActionBar.java
@@ -4615,7 +4617,7 @@ index 10591c8..0d6e7b2 100644
 -version = 3.9.0
 +version = 4.1.7
 diff --git a/patches/build.gradle.kts b/patches/build.gradle.kts
-index 4a17b30..082a013 100644
+index 4a17b30..7380282 100644
 --- a/patches/build.gradle.kts
 +++ b/patches/build.gradle.kts
 @@ -2,17 +2,18 @@ group = "crimera"
@@ -4642,10 +4644,27 @@ index 4a17b30..082a013 100644
      compileOnly("com.github.REAndroid:ARSCLib:a28c6fb2a7")
  
      // Used by JsonGenerator.
-@@ -22,6 +23,12 @@ dependencies {
+@@ -21,7 +22,29 @@ dependencies {
+     implementation(libs.morphe.patches.library)
  }
  
++tasks.withType<Test>().configureEach {
++    testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
++}
++
  tasks {
++    register<JavaExec>("auditFoldApk") {
++        dependsOn("classes")
++        classpath = sourceSets["main"].runtimeClasspath
++        mainClass.set("app.crimera.patches.instagram.misc.reels.AuditFoldApkKt")
++        doFirst {
++            val input = project.findProperty("foldApk")?.toString()
++                ?: error("Supply -PfoldApk=/absolute/path/to/base.apk (or classes.dex)")
++            val output = project.findProperty("foldAuditOutput")?.toString()
++                ?: project.layout.buildDirectory.dir("fold-apk-audit").get().asFile.absolutePath
++            args(input, output)
++        }
++    }
 +    register<JavaExec>("verifyFoldBundle") {
 +        dependsOn("buildAndroid", "test")
 +        classpath = sourceSets["main"].runtimeClasspath
@@ -4777,12 +4796,65 @@ index 0000000..b6bac75
 +        }
 +    }
 +}
+diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AuditFoldApk.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AuditFoldApk.kt
+new file mode 100644
+index 0000000..3278d22
+--- /dev/null
++++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AuditFoldApk.kt
+@@ -0,0 +1,47 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.crimera.patches.instagram.misc.reels
++
++import com.android.tools.smali.dexlib2.DexFileFactory
++import com.android.tools.smali.dexlib2.Opcodes
++import com.android.tools.smali.dexlib2.iface.ClassDef
++import com.android.tools.smali.dexlib2.immutable.ImmutableClassDef
++import com.android.tools.smali.dexlib2.immutable.ImmutableDexFile
++import com.android.tools.smali.dexlib2.writer.pool.DexPool
++import java.io.File
++import java.security.MessageDigest
++
++/** Offline structural audit of a USER-SUPPLIED base APK or DEX. This does not run all
++ * Piko patches, sign an APK, or claim ART/device validation. No APK is downloaded here. */
++fun main(args: Array<String>) {
++    require(args.size == 2) { "Usage: auditFoldApk <base.apk|classes.dex> <new-output-directory>" }
++    val apk = File(args[0]); require(apk.isFile) { "Input APK/DEX missing: $apk" }
++    val output = File(args[1]); require(!output.exists()) { "Refusing to overwrite audit output: $output" }
++    val hash = MessageDigest.getInstance("SHA-256")
++    apk.inputStream().use { input -> val buffer = ByteArray(65536); while (true) {
++        val n = input.read(buffer); if (n < 0) break; hash.update(buffer, 0, n)
++    } }
++    val container = DexFileFactory.loadDexContainer(apk, Opcodes.getDefault())
++    val entries = container.dexEntryNames.map { container.getEntry(it)!!.dexFile }
++    fun lookup(type: String): ClassDef? {
++        val found = entries.asSequence().flatMap { it.classes.asSequence() }.filter { it.type == type }.take(2).toList()
++        require(found.size <= 1) { "Duplicate DEX class $type" }; return found.singleOrNull()
++    }
++    val owner = requireNotNull(lookup(ROUNDED_CARD)) { "Rounded card absent; supply base.apk containing code, not an APKM container/split" }
++    output.mkdirs()
++    val report = StringBuilder("input-sha256=${hash.digest().joinToString("") { "%02x".format(it) }}\n")
++    report.append(roundedCardDiagnostic(owner))
++    File(output, "before.txt").writeText(report.toString())
++    val plan = identifyRoundedCard(owner, ::lookup)
++    for (type in plan.hierarchy) lookup(type)?.let { report.append(roundedCardDiagnostic(it)) }
++    report.append("strategy=${plan.strategy} fallbackIndex=${plan.fallbackIndex} parentCall=${plan.parentCall}\n")
++    val replacement = installRoundedCardEntryBypass(owner, ::lookup)
++    val rewritten = ImmutableClassDef(owner.type, owner.accessFlags, owner.superclass, owner.interfaces,
++        owner.sourceFile, owner.annotations, owner.fields, owner.methods.map { if (it == plan.method) replacement else it })
++    val file = File(output, "rounded-dispatch-inspection.dex")
++    DexPool.writeTo(file.path, ImmutableDexFile(entries.first().opcodes, listOf(rewritten)))
++    val reread = DexFileFactory.loadDexFile(file, entries.first().opcodes).classes.single()
++    report.append("\nRELOADED (inspection DEX only, not an installable APK):\n").append(roundedCardDiagnostic(reread))
++    File(output, "audit.txt").writeText(report.toString())
++    println(report)
++    println("Hook rewritten and DEX reloaded. Full Piko patch session and ART/device execution remain separate validations.")
++}
 diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
 new file mode 100644
-index 0000000..17ca4ef
+index 0000000..e6211d8
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
-@@ -0,0 +1,248 @@
+@@ -0,0 +1,250 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.crimera.patches.instagram.misc.reels
 +
@@ -4814,7 +4886,9 @@ index 0000000..17ca4ef
 +}
 +private fun isSuper(i: Instruction) = i.opcode == Opcode.INVOKE_SUPER || i.opcode == Opcode.INVOKE_SUPER_RANGE
 +private fun isGoto(i: Instruction) = i.opcode in setOf(Opcode.GOTO, Opcode.GOTO_16, Opcode.GOTO_32)
-+private fun isIf(i: Instruction) = i.opcode.name.startsWith("IF_")
++private fun isIf(i: Instruction) = i.opcode in setOf(Opcode.IF_EQ, Opcode.IF_NE, Opcode.IF_LT,
++    Opcode.IF_GE, Opcode.IF_GT, Opcode.IF_LE, Opcode.IF_EQZ, Opcode.IF_NEZ, Opcode.IF_LTZ,
++    Opcode.IF_GEZ, Opcode.IF_GTZ, Opcode.IF_LEZ)
 +private fun isDispatch(m: MethodReference) = m.name == "dispatchDraw" && m.returnType == "V" && m.parameterTypes == listOf(CANVAS)
 +
 +/** Code-unit addresses, never instruction indices in a DEX branch or try_item. */
