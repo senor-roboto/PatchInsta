@@ -4676,10 +4676,10 @@ index 4a17b30..7380282 100644
  
 diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
 new file mode 100644
-index 0000000..b6bac75
+index 0000000..caffdd0
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,112 @@
 +/*
 + * Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE.
 + */
@@ -4762,11 +4762,7 @@ index 0000000..b6bac75
 +        // Validate and construct a replacement transactionally before changing the class.
 +        // The parent reference is resolved from this APK, not an obfuscated name from another build.
 +        val rounded = mutableClassDefBy(ROUNDED_CARD)
-+        val replacement = installRoundedCardEntryBypass(rounded) { type -> classDefByOrNull(type) }
-+        val previous = rounded.methods.single { it.name == replacement.name
-+            && it.parameterTypes == replacement.parameterTypes && it.returnType == replacement.returnType }
-+        rounded.methods.remove(previous)
-+        rounded.methods.add(replacement)
++        replaceRoundedCardEntryBypass(rounded) { type -> classDefByOrNull(type) }
 +        var dispatch = viewerClass.methods.firstOrNull {
 +            it.name == "dispatchTouchEvent" && it.parameterTypes == listOf("Landroid/view/MotionEvent;") && it.returnType == "Z"
 +        }
@@ -4798,17 +4794,17 @@ index 0000000..b6bac75
 +}
 diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AuditFoldApk.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AuditFoldApk.kt
 new file mode 100644
-index 0000000..3278d22
+index 0000000..03af27c
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AuditFoldApk.kt
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,51 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.crimera.patches.instagram.misc.reels
 +
++import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
 +import com.android.tools.smali.dexlib2.DexFileFactory
 +import com.android.tools.smali.dexlib2.Opcodes
 +import com.android.tools.smali.dexlib2.iface.ClassDef
-+import com.android.tools.smali.dexlib2.immutable.ImmutableClassDef
 +import com.android.tools.smali.dexlib2.immutable.ImmutableDexFile
 +import com.android.tools.smali.dexlib2.writer.pool.DexPool
 +import java.io.File
@@ -4838,9 +4834,13 @@ index 0000000..3278d22
 +    val plan = identifyRoundedCard(owner, ::lookup)
 +    for (type in plan.hierarchy) lookup(type)?.let { report.append(roundedCardDiagnostic(it)) }
 +    report.append("strategy=${plan.strategy} fallbackIndex=${plan.fallbackIndex} parentCall=${plan.parentCall}\n")
-+    val replacement = installRoundedCardEntryBypass(owner, ::lookup)
-+    val rewritten = ImmutableClassDef(owner.type, owner.accessFlags, owner.superclass, owner.interfaces,
-+        owner.sourceFile, owner.annotations, owner.fields, owner.methods.map { if (it == plan.method) replacement else it })
++    val rewritten = MutableClass(owner)
++    val original = identifyRoundedCard(rewritten, ::lookup).method
++    val preview = installRoundedCardEntryBypass(rewritten, ::lookup)
++    report.append("old-prototype-predicate-matches=${rewritten.methods.count { it.name == preview.name && it.parameterTypes == preview.parameterTypes && it.returnType == preview.returnType }}\n")
++    report.append("parameter-representations=${original.parameterTypes.map { it.javaClass.name }} -> ${preview.parameterTypes.map { it.javaClass.name }}\n")
++    // Exercise the same MutableClass commit path used by AdaptiveFoldReelsPatch.
++    replaceRoundedCardEntryBypass(rewritten, ::lookup)
 +    val file = File(output, "rounded-dispatch-inspection.dex")
 +    DexPool.writeTo(file.path, ImmutableDexFile(entries.first().opcodes, listOf(rewritten)))
 +    val reread = DexFileFactory.loadDexFile(file, entries.first().opcodes).classes.single()
@@ -4851,13 +4851,14 @@ index 0000000..3278d22
 +}
 diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
 new file mode 100644
-index 0000000..a899e0a
+index 0000000..d7961ca
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHook.kt
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,294 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.crimera.patches.instagram.misc.reels
 +
++import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
 +import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 +import com.android.tools.smali.dexlib2.AccessFlags
 +import com.android.tools.smali.dexlib2.Opcode
@@ -4890,7 +4891,7 @@ index 0000000..a899e0a
 +private fun isIf(i: Instruction) = i.opcode in setOf(Opcode.IF_EQ, Opcode.IF_NE, Opcode.IF_LT,
 +    Opcode.IF_GE, Opcode.IF_GT, Opcode.IF_LE, Opcode.IF_EQZ, Opcode.IF_NEZ, Opcode.IF_LTZ,
 +    Opcode.IF_GEZ, Opcode.IF_GTZ, Opcode.IF_LEZ)
-+private fun isDispatch(m: MethodReference) = m.name == "dispatchDraw" && m.returnType == "V" && m.parameterTypes == listOf(CANVAS)
++private fun isDispatch(m: MethodReference) = m.name == "dispatchDraw" && m.returnType == "V" && m.parameterTypes.map { it.toString() } == listOf(CANVAS)
 +
 +/** Code-unit addresses, never instruction indices in a DEX branch or try_item. */
 +internal class DrawFlow(val method: Method) {
@@ -5042,8 +5043,10 @@ index 0000000..a899e0a
 + * The guard and its super call are OUTSIDE every native protected region. False enters
 + * the original first instruction; true draws native children and returns. No goto into
 + * an obfuscated native block, no helper whitelist, no skipped finally/cleanup. */
-+internal fun installRoundedCardEntryBypass(owner: ClassDef, lookup: (String) -> ClassDef?): MutableMethod {
-+    val plan = identifyRoundedCard(owner, lookup)
++internal fun installRoundedCardEntryBypass(owner: ClassDef, lookup: (String) -> ClassDef?): MutableMethod =
++    buildRoundedCardEntryBypass(identifyRoundedCard(owner, lookup))
++
++private fun buildRoundedCardEntryBypass(plan: RoundedCardPlan): MutableMethod {
 +    val draw = plan.method; val body = draw.implementation!!
 +    val self = body.registerCount - 2
 +    val prefix: List<Instruction> = listOf(
@@ -5064,6 +5067,46 @@ index 0000000..a899e0a
 +    val implementation = ImmutableMethodImplementation(body.registerCount, prefix + native, tries, debug)
 +    return MutableMethod(ImmutableMethod(draw.definingClass, draw.name, draw.parameters, draw.returnType,
 +        draw.accessFlags, draw.annotations, draw.hiddenApiRestrictions, implementation))
++}
++
++/** Retain the exact validated object. CharSequence list equality is representation-dependent:
++ * a DEX String is not equal to an ImmutableMethodParameter holding the same descriptor.
++ * Morphe also caches virtualMethods separately; keep both collections consistent. */
++internal fun replaceRoundedCardEntryBypass(owner: MutableClass, lookup: (String) -> ClassDef?): MutableMethod {
++    val plan = identifyRoundedCard(owner, lookup)
++    val original = plan.method
++    val replacement = buildRoundedCardEntryBypass(plan)
++    val all = owner.methods
++    val virtual = owner.virtualMethods
++    fun identityCount(methods: Collection<Method>) = methods.count { it === original }
++    fun problem(reason: String): Nothing = throw IllegalArgumentException(
++        "Fold rounded replacement: $reason; ownerType=${owner.javaClass.name}; methods=${all.size}; " +
++            "originalType=${original.javaClass.name}@${System.identityHashCode(original)}; " +
++            "replacementType=${replacement.javaClass.name}@${System.identityHashCode(replacement)}\n" +
++            roundedCardDiagnostic(owner))
++    if (original !is MutableMethod || identityCount(all) != 1 || identityCount(virtual) != 1 ||
++        identityCount(owner.directMethods) != 0) problem("validated method identity missing or wrong method category")
++    // Complete all validation and construction before touching either method collection.
++    if (original.definingClass != replacement.definingClass || original.name != replacement.name ||
++        original.parameterTypes.map { it.toString() } != replacement.parameterTypes.map { it.toString() } ||
++        original.returnType != replacement.returnType || original.accessFlags != replacement.accessFlags)
++        problem("replacement changed declaration")
++    val collections = if (all === virtual) listOf(all) else listOf(all, virtual)
++    try {
++        for (methods in collections) {
++            val iterator = methods.iterator()
++            while (iterator.hasNext()) if (iterator.next() === original) { iterator.remove(); break }
++            check(methods.add(replacement)) { "replacement already present" }
++        }
++    } catch (failure: Exception) {
++        for (methods in collections) {
++            val iterator = methods.iterator()
++            while (iterator.hasNext()) if (iterator.next() === replacement) iterator.remove()
++            methods.add(original)
++        }
++        throw IllegalStateException("Fold rounded replacement rolled back", failure)
++    }
++    return replacement
 +}
 +
 +private fun shiftedDebug(item: DebugItem, shift: Int): DebugItem {
@@ -5296,13 +5339,14 @@ index c76b16f..6cfd00e 100644
      <string name="piko_disable_ads">Disable ads</string>
 diff --git a/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
 new file mode 100644
-index 0000000..0fc4158
+index 0000000..d991e57
 --- /dev/null
 +++ b/patches/src/test/kotlin/app/crimera/patches/instagram/misc/reels/RoundedCardHookTest.kt
-@@ -0,0 +1,242 @@
+@@ -0,0 +1,281 @@
 +package app.crimera.patches.instagram.misc.reels
 +
 +import app.morphe.patcher.util.smali.toInstruction
++import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
 +import com.android.tools.smali.dexlib2.*
 +import com.android.tools.smali.dexlib2.iface.*
 +import com.android.tools.smali.dexlib2.iface.instruction.*
@@ -5535,6 +5579,44 @@ index 0000000..0fc4158
 +            assertEquals(Opcode.MOVE_EXCEPTION, code[flow.at(handler)].opcode)
 +            assertTrue(loaded.implementation!!.tryBlocks.all { it.startCodeAddress >= 10 })
 +        } finally { file.delete() }
++    }
++    @Test fun replacesDexBackedMutableMethodDespiteUnequalParameterRepresentations() {
++        val file = Files.createTempFile("fold-mutable-roundtrip-", ".dex").toFile()
++        try {
++            DexPool.writeTo(file.path, ImmutableDexFile(Opcodes.getDefault(), listOf(cls(listOf(reportedShape())), parent)))
++            val dexOwner = DexFileFactory.loadDexFile(file, Opcodes.getDefault()).classes.single { it.type == ROUNDED_CARD }
++            val owner = MutableClass(dexOwner)
++            val original = identifyRoundedCard(owner, ::lookup).method
++            val preview = installRoundedCardEntryBypass(owner, ::lookup)
++            assertEquals(original.parameterTypes.map { it.toString() }, preview.parameterTypes.map { it.toString() })
++            // Exactly the RC's failing second predicate; no obfuscated-name assumption.
++            assertFalse(original.parameterTypes == preview.parameterTypes)
++            assertEquals(0, owner.methods.count { it.name == preview.name && it.parameterTypes == preview.parameterTypes && it.returnType == preview.returnType })
++            val cachedVirtual = owner.virtualMethods
++            val cachedDirect = owner.directMethods
++            val replacement = replaceRoundedCardEntryBypass(owner, ::lookup)
++            assertEquals(1, owner.methods.count { it === replacement })
++            assertEquals(1, cachedVirtual.count { it === replacement })
++            assertFalse(owner.methods.any { it === original })
++            assertFalse(cachedVirtual.any { it === original })
++            assertTrue(cachedDirect.isEmpty())
++            DexPool.writeTo(file.path, ImmutableDexFile(Opcodes.getDefault(), listOf(owner, parent)))
++            val rewritten = DexFileFactory.loadDexFile(file, Opcodes.getDefault()).classes.single { it.type == ROUNDED_CARD }.methods.single()
++            assertEquals(Opcode.INVOKE_STATIC_RANGE, rewritten.implementation!!.instructions.first().opcode)
++            assertEquals(32, rewritten.implementation!!.instructions.count())
++            assertEquals(original.implementation!!.tryBlocks.single().startCodeAddress + 10,
++                rewritten.implementation!!.tryBlocks.single().startCodeAddress)
++        } finally { file.delete() }
++    }
++    @Test fun rejectsStaleMethodCollectionBeforeAnyMutation() {
++        val owner = MutableClass(cls(listOf(reportedShape())))
++        val original = owner.methods.single()
++        owner.virtualMethods.clear()
++        try { replaceRoundedCardEntryBypass(owner, ::lookup); fail("accepted stale virtual cache") }
++        catch (e: IllegalArgumentException) { assertTrue(e.message!!.contains("validated method identity")) }
++        assertSame(original, owner.methods.single())
++        assertEquals(27, original.implementation!!.instructions.count())
++        assertTrue(owner.virtualMethods.isEmpty())
 +    }
 +    @Test fun diagnosticsAreBoundedAndExcludeStringLiterals() {
 +        val m = simple("const-string v0, \"PRIVATE_SENTINEL\"", "invoke-super {v1, v2}, $frame->dispatchDraw($canvas)V", "return-void")
