@@ -965,10 +965,9 @@ index 0000000..8a00558
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsChrome.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsChrome.java
 new file mode 100644
-index 0000000..c99f443
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsChrome.java
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,128 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -987,7 +986,7 @@ index 0000000..c99f443
 +import java.util.function.Function;
 +
 +/** Discovery-only hierarchy walks. Navigation and pane backgrounds only; action visibility belongs to Controls. */
-+final class FoldReelsChrome {
++final class FoldReelsChrome implements View.OnAttachStateChangeListener {
 +    private static final SparseArray<String> resourceNames = new SparseArray<>();
 +    private final WeakHashMap<View, State> states = new WeakHashMap<>();
 +    private final Function<View, String> names;
@@ -1002,7 +1001,7 @@ index 0000000..c99f443
 +        if (hideBottomTabs) { nodes = 0; scan(content, viewer, true, false, 0); }
 +        for (Iterator<Map.Entry<View, State>> it = states.entrySet().iterator(); it.hasNext();) {
 +            Map.Entry<View, State> e = it.next();
-+            if (e.getValue().seen != generation) { e.getValue().restore(e.getKey()); it.remove(); }
++            if (e.getValue().seen != generation) { release(e.getKey(), e.getValue()); it.remove(); }
 +        }
 +    }
 +    private void scan(View view, View viewer, boolean tabsOnly, boolean panes, int depth) {
@@ -1037,7 +1036,7 @@ index 0000000..c99f443
 +    }
 +    private void remember(View view, boolean hide, boolean pane, boolean tab) {
 +        State state = states.get(view);
-+        if (state == null) { state = new State(); states.put(view, state); }
++        if (state == null) { state = new State(); states.put(view, state); view.addOnAttachStateChangeListener(this); }
 +        state.seen = generation; state.hide = hide; state.pane = pane; state.tab = tab;
 +    }
 +    private static boolean isBottomTabs(View view, View viewer, String name) {
@@ -1067,14 +1066,19 @@ index 0000000..c99f443
 +        tabsHidden = false;
 +        for (Iterator<Map.Entry<View, State>> it = states.entrySet().iterator(); it.hasNext();) {
 +            Map.Entry<View, State> e = it.next(); View view = e.getKey(); State state = e.getValue();
-+            if (!view.isAttachedToWindow()) { state.restore(view); it.remove(); continue; }
++            if (!view.isAttachedToWindow()) { release(view, state); it.remove(); continue; }
 +            state.apply(view);
 +            tabsHidden |= state.tab && view.getVisibility() == View.INVISIBLE;
 +        }
 +        return tabsHidden;
 +    }
 +    String status() { return "tracked=" + states.size() + " tabs=" + tabsHidden; }
-+    void restore() { for (Map.Entry<View, State> e : states.entrySet()) e.getValue().restore(e.getKey()); states.clear(); tabsHidden = false; }
++    void restore() { for (Map.Entry<View, State> e : states.entrySet()) release(e.getKey(), e.getValue()); states.clear(); tabsHidden = false; }
++    private void release(View view, State state) { state.restore(view); view.removeOnAttachStateChangeListener(this); }
++    @Override public void onViewAttachedToWindow(View view) {}
++    @Override public void onViewDetachedFromWindow(View view) {
++        State state=states.remove(view); if(state!=null) release(view,state);
++    }
 +    private static final class State {
 +        int seen, visibility;
 +        boolean hide, pane, tab, hid, cleared;
@@ -1742,10 +1746,9 @@ index 0000000..e36fca7
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsHeader.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsHeader.java
 new file mode 100644
-index 0000000..4c7d62f
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsHeader.java
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,113 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1822,6 +1825,7 @@ index 0000000..4c7d62f
 +        frame(viewer, viewport, boundary, enabled, false, clipping);
 +    }
 +    void frame(View viewer,RectF viewport,View boundary,boolean enabled,boolean hideHeader,FoldReelsClipping clipping){
++        if (!hideHeader) hidden.restore();
 +        hidden.begin();
 +        bottom=0;FoldReelsViews.bounds(viewer,root,matrix);
 +        float target=Math.max(root.top,viewport.top)+8*viewer.getResources().getDisplayMetrics().density;
@@ -3708,10 +3712,9 @@ index 0000000..a560c8a
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java
 new file mode 100644
-index 0000000..c790d4d
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,136 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Canvas;
@@ -3771,9 +3774,13 @@ index 0000000..c790d4d
 +        mounted(1);AtomicInteger hits=new AtomicInteger();author.setOnClickListener(v->hits.incrementAndGet());follow.setOnClickListener(v->hits.incrementAndGet());
 +        View text=((FrameLayout)caption.getChildAt(0)).getChildAt(0);text.setOnClickListener(v->hits.incrementAndGet());
 +        discover();mode(FoldReelsMetadata.Mode.COMPACT);
-+        for(View v:new View[]{avatar,follow}) {float[] p=localCentre(v);send(MotionEvent.ACTION_DOWN,p[0],p[1]);send(MotionEvent.ACTION_UP,p[0],p[1]);}
++        int expected=0;
++        for(View v:new View[]{avatar,follow}) {
++            float[] p=localCentre(v);send(MotionEvent.ACTION_DOWN,p[0],p[1]);send(MotionEvent.ACTION_UP,p[0],p[1]);
++            assertEquals("role="+name(v)+" bounds="+bounds(v)+" row="+bounds(row),++expected,hits.get());
++        }
 +        RectF c=bounds(caption);send(MotionEvent.ACTION_DOWN,c.left+20,c.top+20);send(MotionEvent.ACTION_UP,c.left+20,c.top+20);
-+        assertEquals(3,hits.get());
++        assertEquals("caption="+bounds(caption)+" clip="+caption.getClipBounds()+" text="+bounds(text),3,hits.get());
 +    }
 +    @Test public void captionInvisibleRemainderDoesNotConsumeTouches() {
 +        mounted(1);AtomicInteger hits=new AtomicInteger();View text=((FrameLayout)caption.getChildAt(0)).getChildAt(0);text.setOnClickListener(v->hits.incrementAndGet());
