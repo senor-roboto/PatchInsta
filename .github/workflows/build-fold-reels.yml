@@ -2,7 +2,7 @@ name: Build, verify and release PatchInsta
 
 on:
   push:
-    branches: [main, fix/rounded-dispatch-4.1.7]
+    branches: [main, fix/rounded-dispatch-4.1.7, fix/litho-runtime-4.1.8]
     paths:
       - piko-fold-reels.patch
       - release.json
