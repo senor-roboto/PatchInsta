@@ -3714,7 +3714,7 @@ diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java
-@@ -0,0 +1,136 @@
+@@ -0,0 +1,137 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Canvas;
@@ -3779,7 +3779,8 @@ new file mode 100644
 +            float[] p=localCentre(v);send(MotionEvent.ACTION_DOWN,p[0],p[1]);send(MotionEvent.ACTION_UP,p[0],p[1]);
 +            assertEquals("role="+name(v)+" bounds="+bounds(v)+" row="+bounds(row),++expected,hits.get());
 +        }
-+        RectF c=bounds(caption);send(MotionEvent.ACTION_DOWN,c.left+20,c.top+20);send(MotionEvent.ACTION_UP,c.left+20,c.top+20);
++        RectF c=bounds(caption); RectF root=bounds(viewer); c.offset(-root.left,-root.top);
++        send(MotionEvent.ACTION_DOWN,c.left+20,c.top+20);send(MotionEvent.ACTION_UP,c.left+20,c.top+20);
 +        assertEquals("caption="+bounds(caption)+" clip="+caption.getClipBounds()+" text="+bounds(text),3,hits.get());
 +    }
 +    @Test public void captionInvisibleRemainderDoesNotConsumeTouches() {
