@@ -1,0 +1,23 @@
+{
+  "patcher": "1.14.0-dev.1",
+  "mode": "FULL",
+  "patches": 60,
+  "failed": 0,
+  "stages": [
+    {
+      "step": "PATCHING",
+      "success": true
+    },
+    {
+      "step": "REBUILDING",
+      "success": true
+    }
+  ],
+  "original_apkm_sha256": "1f20e342cc878225c141c83125ea46773ee8ea9491b8bd0469907de496097c0e",
+  "mpp_sha256": "42ab063e3a7ee4a6bc0b1cbb9bb4302a99f38cb7a2a0d9e56faa2ea00e650850",
+  "unsigned_apk_sha256": "54ec38d75df005eeec164dd8a769fd997135be41697e6eb9d12a0c058387f405",
+  "native_libraries_preserved": 14,
+  "zip_integrity": true,
+  "dex_verification": "Rounded: 27 original instructions preserved; 5-instruction guard; registers/branches/try/handlers PASS\nViewer hooks: {Lapp/morphe/extension/instagram/patches/reels/FoldReels;->attachViewer(Landroid/view/View;)V=2, Lapp/morphe/extension/instagram/patches/reels/FoldReels;->beforeViewerDraw(Landroid/view/View;)V=1, Lapp/morphe/extension/instagram/patches/reels/FoldReels;->routeTouch(Landroid/view/View;Landroid/view/MotionEvent;)Z=1}\nExtension class present. Static DEX checks only; ART/device execution not performed.\n",
+  "art_device_validation": false
+}

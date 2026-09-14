@@ -1,3 +1,5 @@
+> État final du 14 septembre : l'APKM original est disponible et les 60 patches ont réussi avec Morphe Patcher 1.14.0-dev.1. La seconde régression du RC et sa correction sont détaillées dans `RC-REPAIR-4.1.7.md`. Les preuves actuelles sont dans `APK-VALIDATION-4.1.7.json`. Le texte initial ci-dessous conserve l'audit réalisé avant réception de l'APK ; ses réserves sur la disponibilité de celui-ci ne sont plus actuelles. Le test ART/Samsung reste à faire.
+
 # Audit et correctif candidat 4.1.7
 
 Base : `senor-roboto/PatchInsta@80d7b37da2b5b35f3a83c65563850f580e33ba34` (4.1.6).

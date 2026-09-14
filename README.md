@@ -2,10 +2,11 @@
 
 **Adaptive Fold Reels**, dérivé non officiel de Piko, pour les deux écrans du Galaxy Z Fold.
 
-Cette branche prépare le **candidat 4.1.7** à partir du HEAD 4.1.6. Elle remplace les
-fallbacks arrondis par une analyse de hiérarchie/CFG et un garde isolé des handlers.
-Elle n'est pas encore annoncée par la source Morphe stable : l'APK 439 réel doit
-encore être inspecté et patché. [Audit, preuves et limites](ENGINEERING-4.1.7.md).
+La **4.1.7** corrige les deux échecs de patchage Fold : référence à une classe
+ancêtre et remplacement de méthode MutableClass. Les **60 patches** ont été appliqués
+à l'APKM original Instagram 439 avec Morphe Patcher 1.14.0-dev.1 : APK reconstruit,
+DEX contrôlé et bibliothèques natives conservées. Le lancement et le rendu Fold
+restent à vérifier sur appareil. [Preuves](APK-VALIDATION-4.1.7.json).
 
 Cible : **Instagram 439.0.0.37.89**, APKM original, **arm64-v8a / versionCode 384510827**. Aucun APK Instagram n’est distribué.
 
@@ -51,7 +52,7 @@ Le package et la signature doivent rester identiques. Réinstaller Morphe sans r
 
 ## Téléchargement manuel durable de la version publiée
 
-[PatchInsta-4.1.6.mpp](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.6/PatchInsta-4.1.6.mpp) · [PatchInsta-4.1.6.zip](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.6/PatchInsta-4.1.6.zip) · [SHA-256](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.6/SHA256SUMS.txt)
+[PatchInsta-4.1.7.mpp](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.7/PatchInsta-4.1.7.mpp) · [PatchInsta-4.1.7.zip](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.7/PatchInsta-4.1.7.zip) · [SHA-256](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.7/SHA256SUMS.txt)
 
 Les fichiers de Release sont durables. Les artefacts Actions servent uniquement au transfert et au diagnostic de CI.
 

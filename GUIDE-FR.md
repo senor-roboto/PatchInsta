@@ -1,4 +1,4 @@
-# PatchInsta 4.1.3 — installation et utilisation
+# PatchInsta 4.1.7 — installation et utilisation
 
 Bundle non officiel basé sur Piko 3.9.0 au commit `50744aa07bb41c4e1f942a06614ef4e6f2e3610c`. Cible inchangée : Instagram **439.0.0.37.89 / arm64-v8a / 384510827**, à partir de l’**APKM original non patché**.
 

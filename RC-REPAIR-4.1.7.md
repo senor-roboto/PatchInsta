@@ -1,3 +1,5 @@
+> Mise à jour du 14 septembre : l'APKM original a été joint à nouveau. Les 60 patches et la reconstruction de l'APK ont réussi. Voir `APK-VALIDATION-4.1.7.json`. Les mentions de blocage ci-dessous décrivent l'étape précédente, désormais résolue.
+
 # Correction du candidat aacfbab — remplacement de méthode
 
 Base exacte : `aacfbab503e7ecd55cdd8fa634d65af98965ad2c`,

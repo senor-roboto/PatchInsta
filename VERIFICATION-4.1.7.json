@@ -1,6 +1,6 @@
 {
   "version": "4.1.7",
-  "status": "candidate_not_in_stable_morphe_feed",
+  "status": "validated_original_apk_ready_for_stable_release",
   "base_commit": "80d7b37da2b5b35f3a83c65563850f580e33ba34",
   "validated_code_commit": "ca8c246fe08c3de6985a71810082e96632bc7def",
   "ci_url": "https://github.com/senor-roboto/PatchInsta/actions/runs/34807087967",
@@ -16,18 +16,19 @@
   "morphe_loader_patch_count": 133,
   "compiled_extension_hook_prototypes_verified": 4,
   "synthetic_dex_write_reload_verified": true,
-  "real_instagram_apk_available": false,
-  "real_instagram_full_patch_verified": false,
+  "real_instagram_apk_available": true,
+  "real_instagram_full_patch_verified": true,
   "art_device_verified": false,
   "samsung_visual_verified": false,
   "local_gradle_attempt": "failed: network unreachable while downloading Gradle 9.6.1; real build executed by CI",
-  "publication": "prerelease v4.1.7-rc-ca8c246; stable Morphe feed unchanged",
+  "publication": "stable release pending main CI",
   "tested_rc_commit": "aacfbab503e7ecd55cdd8fa634d65af98965ad2c",
   "local_patcher_version": "1.14.0-dev.1",
   "local_rc_predicate_reproduced": true,
   "rc_jvm_line_140_confirmed": true,
   "local_mutable_identity_replacement_and_dex_roundtrip": true,
   "local_bundle_loader_verified": true,
-  "apk_blocker": "Previously attached original APKM absent from restored workspace on 2026-09-14; reattachment required",
-  "prior_original_apk_patch_result": "RC aacfbab failed at post-match method lookup, also confirmed by user device report"
+  "prior_original_apk_patch_result": "RC aacfbab failed at post-match method lookup, also confirmed by user device report",
+  "real_instagram_patch_count": 60,
+  "original_apk_validation_file": "APK-VALIDATION-4.1.7.json"
 }
