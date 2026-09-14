@@ -57,11 +57,17 @@ The source-patch sections for RoundedCardHook.kt, AdaptiveFoldReelsPatch.kt, Rou
 
 Local policy/geometry: 305 checks passed. Resource/mapping validation: 13 exact mapping keys and FR/EN XML passed. Distribution guards: 14 tests passed.
 
-The initial CI compiled the runtime and ran 126 Android tests: 125 passed, one new combined metadata-click scenario failed (expected 3 clicks, got 2). It is being diagnosed with separate assertions for author, follow and caption. No failed assertion is disabled.
+Final [CI run 34878804708](https://github.com/senor-roboto/PatchInsta/actions/runs/34878804708), code commit 03c04d963650cca3e23fd41850f4288e103917bf: SUCCESS. All 126 Android scenarios (including 13 new tests), 22 bytecode tests, 305 policy/geometry checks, 13 mapping keys plus FR/EN XML, and 14 distribution tests passed.
+
+The initial metadata click test exposed a coordinate error in the test: a global caption point was sent as viewer-local coordinates after a window-origin shift. The test now converts coordinates correctly and separately asserts all three native author/follow/caption clicks. No failed assertion was disabled or weakened.
+
+Executed build gate: `./gradlew :extensions:instagram:testReleaseUnitTest :patches:verifyFoldBundle --no-daemon --console=plain`. The real MPP was built, its four Fold hook prototypes checked as public static executable methods, and Morphe loaded 133 patch definitions including Adaptive Fold Reels and the Instagram 439 compatibility declaration. Loading definitions is not the same as applying the selected 60 patches to the original APK.
+
+[CI artifact](https://github.com/senor-roboto/PatchInsta/actions/runs/34878804708/artifacts/10362630957): PatchInsta-4.1.8.mpp, SHA-256 `9374bb94f1bed8c5f07a0a758597d5162566d3e40691905efad264f41a91b7aa`. This is a temporary CI candidate, not a stable release. APK patch validation and device validation remain false.
 
 An unavailable local execution environment and missing original APK/APKM currently prevent repeating the complete Instagram 439 patch/rebuild test and inspecting X.07td in its real DEX. A build or Robolectric pass is not a replacement for those gates or a Samsung pixel test.
 
-Do not merge/release this work branch until the new tests pass and the original-APK gate has been rerun. Final visible contour removal remains blocked on concrete drawable evidence.
+Do not merge/release this work branch until the original-APK gate has been rerun. Final visible contour removal remains blocked on concrete drawable evidence.
 
 ## Files
 
