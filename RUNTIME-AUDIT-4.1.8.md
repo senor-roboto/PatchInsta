@@ -155,3 +155,65 @@ reported bottom-gradient payload. Also check native author/follow/caption taps,
 caption clipping, comment-only actions, swipes/adjacent pages, header/tabs, and native
 preset/exit/fold restoration. This diagnostic candidate does not claim contour removal.
 ART/device and visual validation have not been executed here. Stable remains 4.1.7.
+
+### New build and reconstruction evidence
+
+[CI 34937400357](https://github.com/senor-roboto/PatchInsta/actions/runs/34937400357)
+passed at code commit `10e774dcdd71ab577a9f2c9bd93883fa7b14cc46`: 136 Android
+scenarios (126 existing + 10 new), 22 bytecode tests, 305 policy/geometry checks,
+13 mappings/XML checks and 14 distribution tests. The real MPP was compiled and
+loaded by Morphe. Downloaded XML reports confirm zero failures, errors or skips.
+The compiled source-patch hash equals the local cumulative patch exactly.
+MPP SHA-256: `3a7fe5c6c5b1df2b70499c1f62bdfcffc4269ff366183e086b9206e1d0755c62`.
+
+The local CLI exposed a separate reconstruction defect: after writing 19 generated
+DEX files, Morphe Desktop 1.14.0-dev.1 retained the unchanged original classes20.dex.
+The raw APK therefore contained 2,733 duplicate class definitions; the original
+contains none. This is not a successful final DEX-integrity gate, even though the
+CLI reports PATCHING/REBUILDING success.
+
+`diagnostics/canonicalize_apk.py` fixes the **local reconstructed copy**, not Morphe
+Manager itself: it checks every generated DEX against the raw APK, removes only a
+surplus root DEX proven byte-identical to the original, preserves every other ZIP
+entry, and runs the actual SDK zipalign with 16 KB native-library alignment.
+Unknown surplus DEX, missing generated DEX or changed native libraries fail closed.
+Four local unit tests cover these guards; real APK alignment is tested separately,
+not claimed from the mocked alignment in the archive-filtering unit test.
+
+`diagnostics/VerifyFoldDex.java` rejects duplicate class definitions and any missing
+original class in the final APK. It verifies the 27 original RoundedCornerFrameLayout
+instructions, unchanged register operands/native relative branches, five-instruction
+guard, shifted try/handler regions, and the generated Fold calls (attach=2, draw=1,
+touch=1, rounded=1) resolving to executable public static methods. This is a targeted
+static check, not Android's ART verifier or proof of runtime/visual behavior.
+
+Commands actually executed (from the workspace; Java/SDK tools installed in .work):
+
+```text
+./gradlew :extensions:instagram:testReleaseUnitTest :patches:verifyFoldBundle --no-daemon --console=plain  [CI]
+javac -d .work/policy upstream/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPolicy.java upstream/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsGeometry.java upstream/tests/fold-reels/FoldReelsPolicyTest.java
+java -cp .work/policy FoldReelsPolicyTest
+python upstream/tests/fold-reels/check_mappings.py
+python -m unittest discover -s scripts -p test_*.py -v
+python -m unittest discover -s diagnostics -p test_*.py -v
+java -Xmx5g -jar .work/morphe-1.14.0-dev.1.jar patch <original.apkm> -p .work/candidate-ci/PatchInsta-4.1.8.mpp -e "Adaptive Fold Reels" -e Clone --bytecode-mode FULL --unsigned --disable-purge -t .work/patch60-final-temp -o .work/instagram-4.1.8-final-60-raw-unsigned.apk -r .work/patch60-final-result.json
+```
+
+The original APKM's exact path is above; command output is saved in
+`.work/patch60-final.log`. The local smoke test uses Clone's default package option,
+not a verified match for the already installed clone. No signing key was used and
+no APK was installed. On-device Morphe Manager reconstruction must be evaluated
+separately; this CLI-specific correction is not claimed to run in Manager.
+
+The final local run with the CI MPP completed `60` applied patches and `0` failures
+against the original APKM, with `Adaptive Fold Reels` and `Clone` enabled. The raw
+Morphe output contained 19 generated DEX files plus stale original `classes20.dex`.
+After fail-closed canonicalization, the final unsigned APK is
+`C:\Users\dy\Documents\PatchInsta\.work\instagram-4.1.8-final-60-canonical-unsigned.apk`.
+Normalization removed only that stale DEX, preserved all 14 native libraries byte for
+byte, passed ZIP integrity and 16 KB zipalign, and produced SHA-256
+`6b0031dae51e14c63016df594b2eb8800b8cfd7646ff9db6f2b16455fa407be2`.
+The targeted DEX verifier found 181,957 unique classes, zero duplicates, all 181,421
+original classes, unchanged RoundedCardHook native instructions and valid generated
+hooks. This remains static verification: no signing, ART, installation, decoder or
+Samsung visual execution was performed.
