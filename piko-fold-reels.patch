@@ -2262,10 +2262,10 @@ index 0000000..9da5803
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedAudit.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedAudit.java
 new file mode 100644
-index 0000000..6eda0d7
+index 00000000..1f7d90e2
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedAudit.java
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,135 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2306,20 +2306,29 @@ index 0000000..6eda0d7
 +                        .append(" media=").append(FoldReelsDiagnostics.id(media))
 +                        .append(" insets=").append(media.getLeft()).append(',').append(media.getTop()).append(',')
 +                        .append(parent.getWidth()-media.getRight()).append(',').append(parent.getHeight()-media.getBottom()).append('\n');
-+                    host(parent,out); bottom(parent,out,0,new int[]{0});
++                    host(parent,out);
 +                }
 +            }
 +        });
++        // The gradient can be a sibling of the media ring. Search the renderer's verified
++        // presentation scopes independently; absence of a ring must not hide scrim evidence.
++        Set<View> scopes=Collections.newSetFromMap(new IdentityHashMap<>());
++        Set<View> gradients=Collections.newSetFromMap(new IdentityHashMap<>());
++        int[] nodes={0};
++        renderer.visitPresentation((page,scope)->{
++            if(scopes.add(scope)) bottom(scope,out,0,nodes,gradients,FoldReelsChrome::resourceName);
++        },viewer);
 +        out.append("END-MOUNTED-MEDIA-AUDIT\n");
 +    }
-+    private static void bottom(View v,StringBuilder out,int depth,int[] nodes) {
++    static void bottom(View v,StringBuilder out,int depth,int[] nodes,Set<View> seen,Function<View,String> names) {
 +        if(depth>20 || ++nodes[0]>200) return;
-+        if(FoldReelsChrome.resourceName(v).equals("clips_bottom_legibility_gradient_component")) {
++        if(names.apply(v).equals("clips_bottom_legibility_gradient_component")) {
++            if(!seen.add(v)) return;
 +            out.append("native-bottom-gradient "); FoldReelsDiagnostics.view(v,out); host(v,out);
 +            if(v instanceof ViewGroup) for(int i=0;i<Math.min(4,((ViewGroup)v).getChildCount());i++) host(((ViewGroup)v).getChildAt(i),out);
 +            return;
 +        }
-+        if(v instanceof ViewGroup) for(int i=0;i<((ViewGroup)v).getChildCount();i++) bottom(((ViewGroup)v).getChildAt(i),out,depth+1,nodes);
++        if(v instanceof ViewGroup) for(int i=0;i<((ViewGroup)v).getChildCount() && nodes[0]<200;i++) bottom(((ViewGroup)v).getChildAt(i),out,depth+1,nodes,seen,names);
 +    }
 +    private static void host(View v,StringBuilder out) {
 +        out.append("mount-owner "); FoldReelsDiagnostics.view(v,out);
@@ -2349,10 +2358,26 @@ index 0000000..6eda0d7
 +            .append(" stateIds=").append(java.util.Arrays.toString(d.getState()))
 +            .append(" constantState=").append(FoldReelsDiagnostics.type(d.getConstantState())).append(' ');
 +        FoldReelsDiagnostics.drawable(d,out,0); out.append('\n');
++        FoldReelsBorderEvidence.report(d,out);
 +        if(d instanceof GradientDrawable) {
 +            GradientDrawable g=(GradientDrawable)d;
 +            out.append(" public-shape fill=").append(g.getColor()==null?"unset":Integer.toHexString(g.getColor().getColorForState(d.getState(),0)))
 +                .append(" gradient=").append(java.util.Arrays.toString(g.getColors())).append('\n');
++        }
++        // Public framework APIs only. The previous audit stopped at InsetDrawable and
++        // LayerDrawable, losing the actual payload despite recognizing the outer wrapper.
++        if(d instanceof android.graphics.drawable.LayerDrawable) {
++            android.graphics.drawable.LayerDrawable layers=(android.graphics.drawable.LayerDrawable)d;
++            for(int i=0;i<Math.min(8,layers.getNumberOfLayers());i++) {
++                out.append(" public-layer=").append(i).append('\n');
++                inspect(layers.getDrawable(i),out,depth+1,seen);
++            }
++        } else if(d instanceof android.graphics.drawable.DrawableWrapper) {
++            Drawable child=((android.graphics.drawable.DrawableWrapper)d).getDrawable();
++            if(child!=null) {out.append(" public-wrapped\n");inspect(child,out,depth+1,seen);}
++        } else if(d.getClass().getName().startsWith("android.graphics.drawable.")) {
++            Drawable current=d.getCurrent();
++            if(current!=null && current!=d) {out.append(" public-current\n");inspect(current,out,depth+1,seen);}
 +        }
 +        // Only application-owned Drawable fields typed Drawable/Paint. No hidden Android
 +        // internals, Strings, arrays of mount content, owners, callbacks or user text.
@@ -6151,3 +6176,204 @@ index 0000000..801bfa2
 +assert all_java.count('activity.recreate()') == 1
 +assert 'piko_fold_reels_refresh_confirm' in all_java
 +print(f"{len(expected)} exact mapping keys and FR/EN XML resources checked.")
+diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsBorderEvidence.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsBorderEvidence.java
+new file mode 100644
+index 00000000..6bad8c1e
+--- /dev/null
++++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsBorderEvidence.java
+@@ -0,0 +1,94 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.morphe.extension.instagram.patches.reels;
++
++import android.graphics.Paint;
++import android.graphics.Path;
++import android.graphics.PathEffect;
++import android.graphics.drawable.Drawable;
++import java.lang.reflect.Field;
++import java.lang.reflect.Modifier;
++import java.util.ArrayList;
++import java.util.Arrays;
++
++/** Export-only structural evidence from the original 439 DEX. Never authorizes suppression. */
++final class FoldReelsBorderEvidence {
++    private FoldReelsBorderEvidence() {}
++    static void report(Drawable drawable, StringBuilder out) {
++        // BorderColorDrawable: direct Drawable subclass, Paint, two Paths, boolean and a
++        // plain state with 4 widths, 4 colors, PathEffect and float[] radii. No obfuscated names.
++        Class<?> type = drawable.getClass();
++        if (type.getSuperclass() != Drawable.class || platform(type)) return;
++        Field paint = null, state = null; int paths = 0, flags = 0;
++        for (Field field : fields(type)) {
++            Class<?> t = field.getType();
++            if (t == Paint.class && paint == null) paint = field;
++            else if (t == Path.class) paths++;
++            else if (t == boolean.class) flags++;
++            else if (state == null && stateShape(t)) state = field;
++            else return;
++        }
++        if (paint == null || state == null || paths != 2 || flags != 1) return;
++        try {
++            paint.setAccessible(true); state.setAccessible(true);
++            Paint p = (Paint) paint.get(drawable); Object value = state.get(drawable);
++            if (p == null || value == null || value.getClass() != state.getType()) return;
++            float[] widths = new float[4]; int[] colors = new int[4]; float[] radii = null;
++            int wi = 0, ci = 0; Object effect = null;
++            for (Field field : fields(state.getType())) {
++                field.setAccessible(true);
++                if (field.getType() == float.class) widths[wi++] = field.getFloat(value);
++                else if (field.getType() == int.class) colors[ci++] = field.getInt(value);
++                else if (field.getType() == PathEffect.class) effect = field.get(value);
++                else {
++                    float[] source = (float[]) field.get(value);
++                    if (source != null && source.length != 4 && source.length != 8) {
++                        out.append(" border-state-rejected:radii-length\n"); return;
++                    }
++                    radii = source == null ? null : source.clone();
++                }
++            }
++            out.append(" litho-border-state structural-match (not mount/pixel proof)")
++                .append(" widths-unordered=").append(Arrays.toString(widths))
++                .append(" colors-unordered=");
++            for (int color : colors) out.append(String.format(java.util.Locale.ROOT, "%08x ", color));
++            out.append("radii=").append(Arrays.toString(radii))
++                .append(" pathEffect=").append(FoldReelsDiagnostics.type(effect))
++                .append(" paintStyle=").append(p.getStyle())
++                .append(" shader=").append(FoldReelsDiagnostics.type(p.getShader()))
++                .append(" uniformThinWhite15=").append(matches(widths, colors, radii, effect, p))
++                .append("; draw resets Paint color/width; alpha alone is not suppression proof\n");
++        } catch (ReflectiveOperationException | RuntimeException error) {
++            out.append(" border-state-unavailable=").append(error.getClass().getName()).append('\n');
++        }
++    }
++    private static boolean matches(float[] widths, int[] colors, float[] radii, Object effect, Paint paint) {
++        if (effect != null || paint.getStyle() != Paint.Style.STROKE || paint.getShader() != null
++                || radii == null || !Float.isFinite(widths[0]) || widths[0] <= 0 || widths[0] > 4) return false;
++        for (float width : widths) if (width != widths[0]) return false;
++        for (int color : colors) if (color != 0x26ffffff) return false;
++        for (float radius : radii) if (!Float.isFinite(radius) || radius <= 0 || radius != radii[0]) return false;
++        return true;
++    }
++    private static boolean platform(Class<?> type) {
++        String name = type.getName();
++        return name.startsWith("android.") || name.startsWith("java.") || name.startsWith("javax.");
++    }
++    private static boolean stateShape(Class<?> type) {
++        if (type.isPrimitive() || type.isArray() || platform(type) || type.getSuperclass() != Object.class) return false;
++        int floats=0, ints=0, effects=0, arrays=0;
++        for (Field field : fields(type)) {
++            Class<?> t=field.getType();
++            if (t==float.class) floats++;
++            else if (t==int.class) ints++;
++            else if (t==PathEffect.class) effects++;
++            else if (t==float[].class) arrays++;
++            else return false;
++        }
++        return floats==4 && ints==4 && effects==1 && arrays==1;
++    }
++    private static java.util.List<Field> fields(Class<?> type) {
++        ArrayList<Field> result = new ArrayList<>();
++        for (Field field : type.getDeclaredFields()) if (!Modifier.isStatic(field.getModifiers())) result.add(field);
++        return result;
++    }
++}
+diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedEvidenceTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedEvidenceTest.java
+new file mode 100644
+index 00000000..f79c0415
+--- /dev/null
++++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedEvidenceTest.java
+@@ -0,0 +1,95 @@
++package app.morphe.extension.instagram.patches.reels;
++
++import android.graphics.*;
++import android.graphics.drawable.*;
++import android.view.View;
++import android.widget.FrameLayout;
++import java.util.Collections;
++import java.util.IdentityHashMap;
++import java.util.Set;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.RobolectricTestRunner;
++import org.robolectric.annotation.Config;
++import static org.junit.Assert.*;
++
++@RunWith(RobolectricTestRunner.class)
++@Config(sdk=29, manifest=Config.NONE)
++public class FoldReelsMountedEvidenceTest extends FoldReelsTestFixture {
++    static class BorderState {
++        float south=1, west=1, east=1, north=1;
++        int bottom=0x26ffffff, left=0x26ffffff, right=0x26ffffff, top=0x26ffffff;
++        PathEffect effect; float[] radii={17,17,17,17};
++    }
++    static class Border extends Drawable {
++        Paint pen=new Paint(); Path path=new Path(), clip=new Path();
++        BorderState state=new BorderState(); boolean asymmetric;
++        static int draws;
++        Border(){pen.setStyle(Paint.Style.STROKE);}
++        public void draw(Canvas c){draws++;}
++        public void setAlpha(int alpha){pen.setAlpha(alpha);}
++        public void setColorFilter(ColorFilter f){pen.setColorFilter(f);}
++        public int getOpacity(){return -1;}
++    }
++    static String evidence(Drawable d) {
++        StringBuilder out=new StringBuilder();FoldReelsBorderEvidence.report(d,out);return out.toString();
++    }
++    static String inspect(Drawable d) {
++        StringBuilder out=new StringBuilder();
++        FoldReelsMountedAudit.inspect(d,out,0,Collections.newSetFromMap(new IdentityHashMap<>()));return out.toString();
++    }
++    @Test public void structuralStateReadsWidthsInsteadOfStalePaintAndNeverDraws() {
++        Border b=new Border();b.pen.setStrokeWidth(0);b.pen.setColor(0xff000000);b.setAlpha(79);b.setBounds(0,0,931,1656);
++        Border.draws=0;String result=evidence(b);
++        assertTrue(result,result.contains("uniformThinWhite15=true"));assertTrue(result,result.contains("widths-unordered=[1.0, 1.0, 1.0, 1.0]"));
++        assertEquals(79,b.pen.getAlpha());assertEquals(0,b.pen.getStrokeWidth(),0);assertEquals(0,Border.draws);
++        assertEquals(new Rect(0,0,931,1656),b.getBounds());assertNull(b.getCallback());
++    }
++    @Test public void differentEdgesRemainEvidenceButAreNotUniformCandidate() {
++        Border b=new Border();b.state.east=2;String result=evidence(b);
++        assertTrue(result,result.contains("structural-match"));assertTrue(result,result.contains("uniformThinWhite15=false"));
++        b.state.east=1;b.state.left=0xff000000;assertTrue(evidence(b).contains("uniformThinWhite15=false"));
++    }
++    @Test public void shadersAndPathEffectsDoNotBecomePlainBorderCandidates() {
++        Border b=new Border();b.pen.setShader(new LinearGradient(0,0,0,20,0xff000000,0,Shader.TileMode.CLAMP));
++        assertTrue(evidence(b).contains("uniformThinWhite15=false"));b.pen.setShader(null);
++        b.state.effect=new DashPathEffect(new float[]{1,2},0);assertTrue(evidence(b).contains("uniformThinWhite15=false"));
++    }
++    @Test public void invalidOrOversizedRadiiAndNanWidthsFailClosed() {
++        Border b=new Border();b.state.radii=new float[1000];assertTrue(evidence(b).contains("radii-length"));
++        b.state.radii=new float[]{17,17,17,17};b.state.north=Float.NaN;assertTrue(evidence(b).contains("uniformThinWhite15=false"));
++        b.state.north=1;b.state.radii[0]=Float.POSITIVE_INFINITY;assertTrue(evidence(b).contains("uniformThinWhite15=false"));
++    }
++    static class PrivateState extends BorderState {String account="PRIVATE_ACCOUNT_DO_NOT_READ";}
++    @Test public void polymorphicOrMissingStateIsNotRead() {
++        Border b=new Border();b.state=new PrivateState();assertEquals("",evidence(b));
++        b.state=null;assertEquals("",evidence(b));
++    }
++    @Test public void standardGradientIsNeverClassifiedAsLithoBorder() {
++        GradientDrawable gradient=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xff000000,0});
++        assertEquals("",evidence(gradient));assertFalse(inspect(gradient).contains("litho-border-state"));
++    }
++    @Test public void publicInsetAndLayerPayloadsAreInspectedWithoutChangingCallbacks() {
++        Border b=new Border();InsetDrawable inset=new InsetDrawable(b,1);LayerDrawable root=new LayerDrawable(new Drawable[]{inset});
++        Drawable.Callback callback=b.getCallback();root.setBounds(0,0,931,1656);Rect bounds=new Rect(b.getBounds());
++        String result=inspect(root);assertTrue(result,result.contains("public-layer=0"));assertTrue(result,result.contains("public-wrapped"));
++        assertTrue(result,result.contains("uniformThinWhite15=true"));assertSame(callback,b.getCallback());assertEquals(bounds,b.getBounds());
++    }
++    @Test public void activeStateListPayloadIsReadWithoutChangingSelection() {
++        Border b=new Border();StateListDrawable root=new StateListDrawable();root.addState(new int[]{android.R.attr.state_pressed},new ColorDrawable(0));
++        root.addState(new int[]{},b);root.setState(new int[]{});Drawable current=root.getCurrent();
++        assertTrue(inspect(root).contains("uniformThinWhite15=true"));assertSame(current,root.getCurrent());assertEquals(0,root.getState().length);
++    }
++    @Test public void nestedPublicContainersRespectTheDepthBudget() {
++        Drawable d=new Border();for(int i=0;i<7;i++)d=new InsetDrawable(d,0);
++        String result=inspect(d);assertTrue(result,result.contains("drawable-cycle-or-limit"));assertFalse(result.contains("litho-border-state"));
++    }
++    @Test public void siblingGradientIsReportedWithoutMediaRingAndOnlyOnce() {
++        FrameLayout scope=pages.get(1), gradient=new FrameLayout(activity);gradient.setTag("clips_bottom_legibility_gradient_component");
++        add(scope,gradient,0,1200,1000,200);StringBuilder out=new StringBuilder();Set<View> seen=Collections.newSetFromMap(new IdentityHashMap<>());
++        int[] nodes={0};FoldReelsMountedAudit.bottom(scope,out,0,nodes,seen,FoldReelsTestFixture::name);
++        FoldReelsMountedAudit.bottom(scope,out,0,nodes,seen,FoldReelsTestFixture::name);
++        assertEquals(1,out.toString().split("native-bottom-gradient",-1).length-1);assertEquals(View.VISIBLE,gradient.getVisibility());
++        assertEquals(1,gradient.getAlpha(),0);assertNull(gradient.getClipBounds());
++    }
++}

@@ -75,3 +75,83 @@ Runtime: FoldReelsMetadata.java, FoldReelsHeader.java, FoldReelsChrome.java, Fol
 Tests: new FoldReelsLithoTest.java.
 Resources: FR/EN header preference.
 Distribution: cumulative piko-fold-reels.patch, release.json, scripts/bundle.py and work-branch CI trigger.
+
+## Windows continuation — 2026-09-15
+
+Terminal verified with `pwd` and `git status`. The initially empty workspace was cloned
+from the existing branch; its HEAD and PR #6 both resolved to
+`7901ccfa674b37491ab7f217b41653ad9d1b66ec`. The full report above was read before edits.
+
+The original APKM is now actually accessible at
+`C:\Users\dy\Downloads\com.instagram.android_439.0.0.37.89-384510827_1dpi_f2d1bb9ab00454a16457d6c5bb735370_apkmirror.com (1)(1).apkm`.
+SHA-256: `1f20e342cc878225c141c83125ea46773ee8ea9491b8bd0469907de496097c0e`.
+Its info.json confirms package/version/code/arm64; base.apk has 20 DEX files and
+14 native libraries. Local extracted data and tools are in
+`C:\Users\dy\Documents\PatchInsta\.work\`, excluded from Git. These are local working
+files, not a guarantee of retention. No proprietary APK or decompiled source is published.
+
+### Actual original-DEX evidence
+
+JADX 1.5.6 plus dexlib2 reference scanning and class slicing were executed on that base.apk:
+
+* `X.07td` in classes.dex is a generic mounted Drawable/Callback wrapper. Its draw
+  saves/translates the canvas, optionally clips/concatenates a matrix, and invokes
+  its Drawable-typed child's draw. It also forwards ripple hotspot/state operations.
+  This confirms why suppressing the class globally would be wrong.
+* `X.0C30` in classes11.dex is a ViewOutlineProvider. getOutline calls setRoundRect
+  at `(0,0,width,height)` with its stored radius. The helper returning the boolean
+  used for the first coordinates was inspected and returns false. No Canvas painting
+  is performed by this provider.
+* `X.01PK.A01` in classes4.dex (ClipsItemInsetsComponent's wide-screen layout)
+  explicitly sets a 6 dp radius and an ALL-edge 0.5 dp border with resource
+  `bds_white_15_transparent`. aapt2 resolves that color to `0x26ffffff`.
+* The Litho builder stores four widths, four colors and corner radii. Its mount path
+  `X.01mM.A06` creates `X.08Nt`, with a Paint in STROKE mode, two Paths, a boolean
+  and a plain state `X.0DlN`. The state has exactly four float widths, four int colors,
+  one PathEffect and one float[] radii. Its equality diagnostic identifies
+  `com.facebook.litho.drawable.BorderColorDrawable.State`.
+* `X.08Nt.draw` draws the uniform border inset by half its stroke width; it resets
+  Paint color and width from state on each draw. Merely setting its Paint alpha to
+  zero is therefore not a reliable reversible fix.
+
+This establishes a real native Reel border and its rendering mechanism. It does
+**not** prove that the particular parent mount recorded on the Fold contains this
+payload. Neither 4.1.7 export reveals the wrapper's child/state. The 1 px geometry
+is consistent with the allocation, but is not an observed runtime object association
+or a before/after pixel test. Unknown mounted drawables remain unsuppressed.
+
+### Diagnostic changes and next evidence
+
+`FoldReelsBorderEvidence` reads only the exact typed shape above, without relying on
+obfuscated class or field names; it reports widths/colors/radii, Paint style, shader
+and path effect. A shape match is explicitly evidence only, never permission to
+remove a drawable. Polymorphic/unrecognized state and unexpected arrays are rejected.
+No draw, alpha/bounds mutation, listener change or arbitrary state traversal occurs.
+
+`FoldReelsMountedAudit` follows public LayerDrawable/DrawableWrapper/current-child
+APIs with its existing depth/identity budget. Bottom-gradient lookup now runs in
+the renderer's verified presentation scopes independently of ring detection, because
+the gradient can be a sibling of the media parent. Exports remain bounded and omit text.
+
+Ten new Android tests cover structural state, stale Paint, immutability, nonuniform
+borders, shader/path effects, invalid state/radii, framework wrappers, active states,
+depth limits and a sibling gradient without a media ring. Existing metadata, header,
+scrim, touch and restoration tests remain required separately.
+
+Local policy/geometry (305), mapping/XML (13) and distribution tests (14) passed.
+Local Gradle could not resolve the Morphe plugin because the existing GitHub
+credential is refused with HTTP 401; this is not a Kotlin compile failure. The
+existing CI MPP was downloaded and its recorded SHA-256 verified. An initial local
+FULL patch/rebuild passed **59** selected patches with all 14 native libraries byte
+identical; Clone was not enabled in that initial command. This is not the required
+60/60 gate. The final candidate must be rebuilt by CI and rerun with Clone enabled.
+
+Required Fold follow-up: repatch the original with the candidate, existing Clone
+package and existing Morphe keystore; do not uninstall the current clone. On each
+display, export diagnostics while a Reel is active (snapshot taken before the menu
+changes focus). Inspect the `media-ring` mount slot and child chain for
+`litho-border-state`, widths, `26ffffff` colors and radii; compare the independently
+reported bottom-gradient payload. Also check native author/follow/caption taps,
+caption clipping, comment-only actions, swipes/adjacent pages, header/tabs, and native
+preset/exit/fold restoration. This diagnostic candidate does not claim contour removal.
+ART/device and visual validation have not been executed here. Stable remains 4.1.7.

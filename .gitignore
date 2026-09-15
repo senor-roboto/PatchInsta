@@ -1,0 +1,8 @@
+# Local build tools, upstream checkout and proprietary APK analysis.
+/.work/
+/upstream/
+/output/
+**/__pycache__/
+*.apk
+*.apkm
+*.dex
