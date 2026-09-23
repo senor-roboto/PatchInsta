@@ -1,3 +1,9 @@
+# PatchInsta 4.1.8 candidate
+
+- 60/60 selected patches applied locally to Instagram 439 with Clone; static DEX, ZIP and native-library preservation checks passed.
+- CI on the shared source passed 136 Android scenarios and 22 bytecode checks; a generic API 35 emulator installed and started the test-signed APK.
+- The Fold Reels border path is narrowly scoped; real Fold/Reels visual removal and physical-device validation remain unverified. Candidate 4.1.8 is intended for the existing Morphe source after publication.
+
 # PatchInsta 4.1.7
 
 - Corrige le rejet de la référence valide à ViewGroup dans le dispatch arrondi d'Instagram 439.

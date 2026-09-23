@@ -1,4 +1,6 @@
-# PatchInsta 4.1.7 — installation et utilisation
+# PatchInsta 4.1.8 candidate — installation et utilisation
+
+Cette version est la candidate 4.1.8, destinée à devenir accessible depuis la source Morphe existante après publication. La reconstruction locale 60/60 et le démarrage sur émulateur API 35 sont vérifiés ; le rendu visuel réel sur Fold/Réels et le compositeur Samsung restent à valider.
 
 Bundle non officiel basé sur Piko 3.9.0 au commit `50744aa07bb41c4e1f942a06614ef4e6f2e3610c`. Cible inchangée : Instagram **439.0.0.37.89 / arm64-v8a / 384510827**, à partir de l’**APKM original non patché**.
 
@@ -66,7 +68,7 @@ Vérifier sur cover le dégradé jusqu’au bord supérieur, la caption sur une 
 
 En cas de défaut, ouvrir **Cadrage Fold → Options avancées → Diagnostic du lecteur → Copier**. Joindre ce texte et une capture courte. Le rapport inclut lifecycle, fenêtre, viewport, surfaces, rails, branches cachées, décor, scrim, largeur des métadonnées, bandeau partagé et raisons de repli. Il exclut textes, captions, usernames, identifiants de compte, URLs et identifiants de média. Rien n’est envoyé automatiquement.
 
-Les tests CI portent sur des vues Android simulées, pas sur le décodeur Instagram, le tactile physique du Fold ou son compositeur. Aucun APKM Instagram n’a été fourni pour cette itération : le chargement du bundle est vérifié, mais son application à l’APKM exact reste à confirmer dans Morphe.
+Les tests CI portent sur des vues Android simulées, pas sur le décodeur Instagram, le tactile physique du Fold ou son compositeur. La reconstruction locale 60/60 de l’APKM original et le démarrage sur émulateur API 35 sont documentés ; aucun rendu visuel réel Fold/Réels n’est confirmé. Cette version reste une candidate.
 
 ## Fichiers durables
 
