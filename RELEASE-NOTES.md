@@ -7,7 +7,7 @@ This is a prerelease candidate; stable Morphe remains 4.1.7.
 - Corrige ensuite la recherche de méthode fondée sur une égalité String/ImmutableMethodParameter : remplacement par identité validée, caches virtuels synchronisés.
 - 60 patches appliqués à l'APKM original 439.0.0.37.89, avec Fold et Clone ; APK reconstruit, 14 bibliothèques natives préservées, aucun patch en échec.
 - Les 27 instructions natives du dispatch sont conservées ; garde de 5 instructions, registres et handlers vérifiés dans l'APK produit.
-- 22 tests bytecode, 113 scénarios Android et gates existants verts. Aucun lancement ART ni rendu Samsung n'est revendiqué.
+- CI shared-source evidence: 22 bytecode checks and 136 Android scenarios passed. A generic API 35 emulator installed and started an isolated test-signed clone APK; no real Fold/Reels visual or Samsung rendering validation is claimed.
 
 ### Candidate validation
 
