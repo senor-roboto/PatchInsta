@@ -3847,7 +3847,7 @@ diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java
-@@ -0,0 +1,138 @@
+@@ -0,0 +1,139 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Canvas;
@@ -3913,7 +3913,8 @@ new file mode 100644
 +            assertEquals("role="+name(v)+" bounds="+bounds(v)+" row="+bounds(row),++expected,hits.get());
 +        }
 +        RectF c=bounds(caption); RectF root=bounds(viewer); c.offset(-root.left,-root.top);
-+        send(MotionEvent.ACTION_DOWN,c.left+20,c.top+20);send(MotionEvent.ACTION_UP,c.left+20,c.top+20);
++        int lineY=Math.min(caption.getClipBounds().height()-1,15);
++        send(MotionEvent.ACTION_DOWN,c.left+20,c.top+lineY);send(MotionEvent.ACTION_UP,c.left+20,c.top+lineY);
 +        assertEquals("caption="+bounds(caption)+" clip="+caption.getClipBounds()+" text="+bounds(text),3,hits.get());
 +    }
 +    @Test public void captionInvisibleRemainderDoesNotConsumeTouches() {
@@ -4574,7 +4575,7 @@ new file mode 100644
 index 0000000..ee6168d
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsScrimTest.java
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,72 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Color;
@@ -4620,8 +4621,10 @@ index 0000000..ee6168d
 +        FrameLayout controls=new FrameLayout(activity); add(pages.get(1),controls,106,1180,788,40);
 +        View scrubber=new View(activity); scrubber.setClickable(true); AtomicInteger clicks=new AtomicInteger();
 +        scrubber.setOnClickListener(v->clicks.incrementAndGet()); add(controls,scrubber,0,0,788,28);
-+        RectF scrubberBefore=bounds(scrubber); renderer.discover(viewer); scrim.discover(renderer,viewer); apply(true);
-+        assertEquals(new RectF(0,1000,1000,1600),bounds(host)); assertEquals(scrubberBefore,bounds(scrubber));
++        RectF nativeGradient=bounds(host), window=bounds(content), scrubberBefore=bounds(scrubber);
++        renderer.discover(viewer); scrim.discover(renderer,viewer); apply(true);
++        assertEquals(new RectF(window.left,nativeGradient.top,window.right,window.bottom),bounds(host));
++        assertEquals(window.bottom,bounds(host).bottom,.01f); assertEquals(scrubberBefore,bounds(scrubber));
 +        assertTrue(scrubber.isClickable()); scrubber.performClick(); assertEquals(1,clicks.get());
 +        apply(false); assertEquals(1,host.getScaleX(),.001f); assertEquals(1,host.getScaleY(),.001f);
 +    }
