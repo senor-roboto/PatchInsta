@@ -18,3 +18,8 @@ Validation still pending:
 - Physical Fold hinge posture and interaction validation.
 
 This is a prerelease candidate only. It must not update the stable Morphe feed or be described as a confirmed visual fix until those device and Reels gates pass.
+
+
+## Current branch status
+
+The verification workflow is enabled for this release candidate branch and this document path. A current-head run is pending; the earlier green run is retained only as evidence for the shared source and test code at commit `10e774d`. No stable Morphe feed update is implied by this note.
