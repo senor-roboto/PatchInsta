@@ -4,12 +4,81 @@ import unittest
 import zipfile
 from pathlib import Path
 from bundle import digest, validate_mpp, verify_checksums, version_tuple
-from publish import metadata, verify_public, find_release, select_release, upload_assets
+from publish import metadata, verify_public, find_release, select_release, upload_assets, load_device_evidence, verify_candidate
 from io import BytesIO
 import hashlib
+from unittest.mock import patch
 
 
 class DistributionTests(unittest.TestCase):
+    def physical_evidence(self):
+        return {
+            'schema':'patchinsta-device-validation/v1', 'version':'4.1.9',
+            'candidate_run_id':'12345', 'source_commit':'a'*40, 'mpp_sha256':'b'*64,
+            'attested_by':'tester', 'tested_at':'2026-09-23T15:00:00+02:00',
+            'device':{'model':'Galaxy Z Fold','android_version':'Android 16','one_ui_version':'One UI 8'},
+            'instagram':{'version':'439.0.0.37.89'},
+            'scenarios':{'cold_starts':10,'swipes':30,'fold_cycles':5},
+            'checks':{
+                'external_screen_visual_pass':True, 'internal_screen_native_pass':True,
+                'no_media_border':True, 'gradient_full_width_bottom':True,
+                'author_and_caption_readable':True, 'comments_work':True,
+                'scrubber_seeks_correctly':True, 'no_crashes':True},
+            'screenshot_sha256':['a'*64]}
+
+    def test_physical_gate_accepts_complete_attestation_for_exact_candidate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence=Path(directory)/'evidence.json'
+            evidence.write_text(json.dumps(self.physical_evidence()))
+            result=load_device_evidence(evidence,{'version':'4.1.9'},'12345','a'*40,'b'*64)
+            self.assertEqual(result['mpp_sha256'],'b'*64)
+
+    def test_physical_gate_rejects_digest_run_or_source_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence=Path(directory)/'evidence.json'
+            evidence.write_text(json.dumps(self.physical_evidence()))
+            for run, commit, digest in [('999','a'*40,'b'*64), ('12345','c'*40,'b'*64), ('12345','a'*40,'c'*64)]:
+                with self.subTest(run=run, commit=commit, digest=digest), self.assertRaisesRegex(ValueError,'does not match'):
+                    load_device_evidence(evidence,{'version':'4.1.9'},run,commit,digest)
+
+    def test_physical_gate_rejects_failed_or_incomplete_device_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence=Path(directory)/'evidence.json'
+            data=self.physical_evidence(); data['checks']['no_media_border']=False
+            evidence.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError,'required passing check'):
+                load_device_evidence(evidence,{'version':'4.1.9'},'12345','a'*40,'b'*64)
+            data=self.physical_evidence(); data['scenarios']['swipes']=29
+            evidence.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError,'scenario counts'):
+                load_device_evidence(evidence,{'version':'4.1.9'},'12345','a'*40,'b'*64)
+
+    def test_promotion_uses_only_the_mpp_with_the_user_supplied_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); output=root/'output'; output.mkdir()
+            evidence=root/'validation-evidence.json'; evidence.write_text(json.dumps(self.physical_evidence()))
+            (output/'build-info.json').write_text(json.dumps({
+                'source_commit':'a'*40, 'run_url':'https://github.com/example/PatchInsta/actions/runs/12345',
+                'mpp_sha256':'b'*64}))
+            config={'version':'4.1.9','repository':'example/PatchInsta'}
+            with patch('publish.verify_kit', return_value={'PatchInsta-4.1.9.mpp':'b'*64}):
+                verified, source = verify_candidate(root,config,'12345','b'*64,evidence)
+                self.assertEqual(verified['PatchInsta-4.1.9.mpp'],'b'*64)
+                self.assertEqual(source,'a'*40)
+                with self.assertRaisesRegex(ValueError,'explicitly approved digest'):
+                    verify_candidate(root,config,'12345','c'*64,evidence)
+
+    def test_promotion_is_separate_from_push_candidate_build(self):
+        root=Path(__file__).resolve().parents[1]
+        build=(root/'.github/workflows/build-fold-reels.yml').read_text()
+        promote=(root/'.github/workflows/promote-fold-reels.yml').read_text()
+        self.assertIn('Upload candidate kit for device validation',build)
+        self.assertNotIn('scripts/publish.py',build)
+        self.assertNotIn('release:',build)
+        self.assertIn('workflow_dispatch:',promote)
+        self.assertIn('EXPECTED_MPP_SHA256',promote)
+        self.assertIn('--promote --evidence',promote)
+
     def test_recovers_only_our_empty_untagged_draft(self):
         draft={'id':1,'tag_name':'untagged-123','draft':True,'assets':[],
                'name':'PatchInsta 4.1.1','author':{'login':'github-actions[bot]'}}
@@ -112,3 +181,4 @@ class DistributionTests(unittest.TestCase):
 
 
 if __name__=='__main__': unittest.main()
+

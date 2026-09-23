@@ -82,7 +82,7 @@ def verify_kit(directory, config):
 def test_results(upstream):
     root = upstream / 'extensions/instagram/build/test-results/testReleaseUnitTest'
     expected = {'FoldReelsRuntimeTest':14, 'FoldReelsLifecycleTest':20, 'FoldReelsPreferencesTest':4,
-                'FoldReelsPresentationTest':23, 'FoldReelsScrimTest':5, 'FoldReelsUpdateTest':15,
+                'FoldReelsPresentationTest':23, 'FoldReelsScrimTest':6, 'FoldReelsUpdateTest':15,
                 'FoldReelsViewportTest':16, 'FoldReelsDrawingTest':4, 'FoldReelsNativeDecorationTest':6, 'FoldReelsNativeScrimTest':6, 'FoldReelsLithoTest':13, 'FoldReelsMountedEvidenceTest':10}
     suites = {}
     for report in root.glob('TEST-*FoldReels*Test.xml'):
@@ -145,3 +145,4 @@ def prepare(root, upstream, output):
 if __name__ == '__main__':
     root = Path(__file__).resolve().parents[1]
     prepare(root, root/'upstream', root/'output')
+
