@@ -1,19 +1,14 @@
-name: Build, verify and release PatchInsta
+name: Build PatchInsta validation candidate
 
 on:
   push:
-    branches: [main, fix/rounded-dispatch-4.1.7, fix/litho-runtime-4.1.8]
+    branches: [main, fix/rounded-dispatch-4.1.7, fix/litho-runtime-4.1.8, codex/fold-reels-4.1.9]
     paths:
       - piko-fold-reels.patch
       - release.json
       - scripts/**
-      - .github/workflows/build-fold-reels.yml
-      - RELEASE-CANDIDATE-4.1.8.md
+      - .github/workflows/**
   workflow_dispatch:
-
-concurrency:
-  group: patchinsta-release-main
-  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -78,61 +73,12 @@ jobs:
             upstream/extensions/instagram/build/reports/tests/testReleaseUnitTest/
             upstream/patches/build/test-results/test/
             output/test-results.json
-          retention-days: 14
-      - name: Transfer verified release files
+          retention-days: 30
+      - name: Upload candidate kit for device validation
         uses: actions/upload-artifact@v4
         with:
-          name: PatchInsta-${{ github.sha }}
+          name: PatchInsta-${{ github.run_id }}
           path: output/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
-  release:
-    if: github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-      actions: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v4
-        with:
-          name: PatchInsta-${{ github.sha }}
-          path: output
-      - name: Publish durable assets, verify downloads and update Morphe feed
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/publish.py
-      - name: Record publication and public accessibility
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: publication-${{ github.sha }}
-          path: publication-result.json
-          retention-days: 14
-
-  candidate:
-    if: github.ref == 'refs/heads/fix/rounded-dispatch-4.1.7'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: PatchInsta-${{ github.sha }}
-          path: output
-      - name: Publish candidate for original APK validation (stable feed unchanged)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          tag="v4.1.7-rc-${GITHUB_SHA:0:7}"
-          gh release create "$tag" --target "$GITHUB_SHA" --prerelease \
-            --title "4.1.7 candidate: original APK validation pending" \
-            --notes "Development candidate. CI gates passed; full original APK patch and device validation pending. Does not update the stable Morphe source." \
-            output/*

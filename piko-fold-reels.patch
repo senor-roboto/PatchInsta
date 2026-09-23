@@ -107,7 +107,7 @@ new file mode 100644
 index 0000000..e3940e3
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
-@@ -0,0 +1,601 @@
+@@ -0,0 +1,608 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -389,9 +389,14 @@ index 0000000..e3940e3
 +        catch (Exception ignored) { return false; } // Native drawing is the fallback.
 +    }
 +
++    public static boolean skipMountedMediaBorder(android.graphics.drawable.Drawable drawable) {
++        try { return FoldReelsNativeDecoration.skipMountedMediaBorder(drawable, watcher); }
++        catch (Exception ignored) { return false; }
++    }
++
 +    private static void showDiagnostic(Activity activity) {
 +        Watcher.Tracker tracker = watcher.trackers.get(activity);
-+        final String report = tracker == null ? "PatchInsta 4.1.8\ntracker=none\n"
++        final String report = tracker == null ? "PatchInsta 4.1.9\ntracker=none\n"
 +                : tracker.diagnosticSnapshot != null ? tracker.diagnosticSnapshot : tracker.buildDiagnostic("after-dialog; NOT a live fullscreen snapshot");
 +        TextView text = new TextView(activity); text.setText(report); text.setTextIsSelectable(true);
 +        text.setTextSize(11); text.setPadding(dp(activity, 16), 0, dp(activity, 16), 0);
@@ -492,11 +497,11 @@ index 0000000..e3940e3
 +                // Invoked before the FIRST settings dialog takes focus. Never rebuild a
 +                // "live" report from the restored/empty state underneath that dialog.
 +                try { diagnosticSnapshot = buildDiagnostic("before-layout-menu"); }
-+                catch (RuntimeException error) { diagnosticSnapshot = "PatchInsta 4.1.8\ndiagnostic failed=" + error.getClass().getName(); }
++                catch (RuntimeException error) { diagnosticSnapshot = "PatchInsta 4.1.9\ndiagnostic failed=" + error.getClass().getName(); }
 +            }
 +            String buildDiagnostic(String phase) {
 +                Activity a = owner.get();
-+                StringBuilder out = new StringBuilder("PatchInsta 4.1.8\ncapture=").append(phase)
++                StringBuilder out = new StringBuilder("PatchInsta 4.1.9\ncapture=").append(phase)
 +                        .append(" uptimeMs=").append(SystemClock.uptimeMillis()).append('\n');
 +                out.append("installed=").append(installed).append(" nativePolicy=").append(noTwoPane ? "no_two_pane" : "v4").append('\n');
 +                diagnostics(out);
@@ -636,6 +641,7 @@ index 0000000..e3940e3
 +                    FoldReelsMetadata.Mode metadataMode = failures.containsKey("controls") ? FoldReelsMetadata.Mode.FULL : p.metadata;
 +                    guarded("metadata", () -> metadata.frame(viewer, viewport, spaces.interactive, metadataMode, controls, clipping), () -> metadata.restore(controls));
 +                    guarded("card", () -> card.frame(!inner && p.crop && p.card && recognized), card::restore);
++                    FoldReelsNativeDecoration.frame(watcher);
 +                    guarded("header", () -> header.frame(viewer, viewport, scope, !inner && p.crop, !inner && p.crop && prefs.hideHeader(inner), clipping), header::restore);
 +                    guarded("scrim", () -> scrim.frame(viewer, viewport, clipBoundary, !inner && p.crop && recognized, p.card, clipping), scrim::restore);
 +                } finally { clipping.endFrame(); }
@@ -678,6 +684,7 @@ index 0000000..e3940e3
 +            void stopPresentation() {
 +                metadata.restore(controls); renderer.restore(); controls.restore(); card.restore(); scrim.restore(); header.restore(); clipping.restore(); chrome.restore();
 +                currentViewer.clear(); discoveryDirty = true; active = false;
++                FoldReelsNativeDecoration.frame(watcher);
 +                Activity a = owner.get(); if (a != null) bars.restore(a);
 +                TextView button = chip.get(); if (button != null && button.getVisibility() != View.GONE) button.setVisibility(View.GONE);
 +            }
@@ -1867,7 +1874,7 @@ new file mode 100644
 index 0000000..9da5803
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsMetadata.java
-@@ -0,0 +1,392 @@
+@@ -0,0 +1,403 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2065,7 +2072,12 @@ index 0000000..9da5803
 +        // translate grandchildren independently: retain native row dispatch/listeners.
 +        float height = v.getHeight();
 +        if (s.caption) {
-+            height = Math.min(height, mountedCaptionHeight(v));
++            int firstLine = mountedCaptionHeight(v);
++            if (firstLine <= 0) {
++                s.restore(v); s.fallback = "native-caption-line-unresolved";
++                controls.metadataTarget(v, s.targets, false); return;
++            }
++            height = Math.min(height, firstLine);
 +            Rect current = v.getClipBounds();
 +            if (s.appliedClip == null || !java.util.Objects.equals(current, s.appliedClip)) s.nativeClip = current;
 +            s.appliedClip = new Rect(0, 0, Math.min(v.getWidth(), Math.round(available)), Math.round(height));
@@ -2089,7 +2101,10 @@ index 0000000..9da5803
 +    }
 +    private static int mountedCaptionHeight(View v) {
 +        // One native line including leading/padding; no invented ellipsis or text copy.
-+        return Math.round(32 * v.getResources().getDisplayMetrics().scaledDensity);
++        // The 32 dp clip showed part of line two on the Fold. Reserve the
++        // native scroll padding plus one conservative 16 dp text line.
++        int firstLine = Math.round(20 * v.getResources().getDisplayMetrics().scaledDensity);
++        return firstLine > 0 && v.getHeight() >= firstLine ? firstLine : 0;
 +    }
 +    private static int lineHeight(View view) {
 +        return view instanceof TextView ? ((TextView) view).getLineHeight()
@@ -2187,7 +2202,10 @@ index 0000000..9da5803
 +                if (id.contains("social_context") || id.contains("social_proof") || id.contains("facepile")
 +                        || id.contains("suggestion") || id.contains("friending")) return null;
 +                if (follow == null && id.contains("follow") && !id.contains("following")) follow = v;
-+                if (avatar == null && v instanceof ImageView && v.getWidth() >= 32*density && v.getHeight() >= 32*density) avatar = v;
++                boolean profileHost = id.equals("clips_author_profile_pic") && v instanceof ViewGroup
++                        && v.getParent() instanceof View && names.apply((View) v.getParent()).equals("clips_author_info_component");
++                if (avatar == null && (v instanceof ImageView || profileHost)
++                        && v.getWidth() >= 32*density && v.getHeight() >= 32*density) avatar = v;
 +            }
 +            if (avatar == null) return null;
 +            for (View v : all) if (textLike(v, names.apply(v)) && (follow == null || !FoldReelsViews.descendant(v, follow))) {
@@ -2406,7 +2424,7 @@ new file mode 100644
 index 0000000..2ea0146
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsNativeDecoration.java
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,98 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2449,6 +2467,59 @@ index 0000000..2ea0146
 +                && viewer.isShown() && FoldReelsViews.descendant(view, viewer);
 +        if (skip) lease.suppressed++;
 +        return skip;
++    }
++    private static final WeakHashMap<android.graphics.drawable.Drawable, BorderLease> borderLeases = new WeakHashMap<>();
++    private static final class BorderLease {
++        final WeakReference<View> host, media;
++        boolean enabled;
++        BorderLease(View host, View media) { this.host=new WeakReference<>(host); this.media=new WeakReference<>(media); }
++    }
++    /** Called every presentation frame so cached Litho display lists are invalidated on release. */
++    static void frame(FoldReels.Watcher watcher) {
++        java.util.Iterator<java.util.Map.Entry<android.graphics.drawable.Drawable, BorderLease>> it = borderLeases.entrySet().iterator();
++        while (it.hasNext()) {
++            java.util.Map.Entry<android.graphics.drawable.Drawable, BorderLease> entry = it.next();
++            BorderLease lease = entry.getValue(); View host = lease.host.get(), media = lease.media.get();
++            if (host == null || media == null || !host.isAttachedToWindow()) { it.remove(); continue; }
++            set(entry.getKey(), lease, host, enabled(watcher, host, media));
++        }
++    }
++    static boolean skipMountedMediaBorder(android.graphics.drawable.Drawable drawable, FoldReels.Watcher watcher) {
++        if (drawable == null || watcher == null || !"X.08Nt".equals(drawable.getClass().getName())) return false;
++        android.graphics.drawable.Drawable current = drawable; View host = null;
++        for (int depth = 0; depth < 4 && current != null; depth++) {
++            android.graphics.drawable.Drawable.Callback callback = current.getCallback();
++            if (callback instanceof View) { host = (View) callback; break; }
++            if (callback instanceof android.graphics.drawable.Drawable) current = (android.graphics.drawable.Drawable) callback;
++            else return false;
++        }
++        if (!(host instanceof android.view.ViewGroup) || !"com.facebook.litho.ComponentHost".equals(host.getClass().getName())) return false;
++        View media = null; android.view.ViewGroup group = (android.view.ViewGroup) host;
++        for (int i = 0; i < group.getChildCount(); i++) {
++            View child = group.getChildAt(i);
++            if ("clips_media_component".equals(FoldReelsChrome.resourceName(child))) { media = child; break; }
++        }
++        if (media == null || !FoldReelsMountedAudit.mediaRing(host, media, FoldReelsChrome::resourceName)) return false;
++        BorderLease lease = borderLeases.get(drawable);
++        if (lease == null || lease.host.get() != host || lease.media.get() != media) {
++            lease = new BorderLease(host, media); borderLeases.put(drawable, lease);
++        }
++        return set(drawable, lease, host, enabled(watcher, host, media));
++    }
++    private static boolean set(android.graphics.drawable.Drawable drawable, BorderLease lease, View host, boolean value) {
++        if (lease.enabled != value) { lease.enabled = value; host.invalidate(); }
++        return lease.enabled;
++    }
++    private static boolean enabled(FoldReels.Watcher watcher, View host, View media) {
++        if (watcher == null || !host.isAttachedToWindow() || media.getParent() != host) return false;
++        for (FoldReels.Watcher.Tracker tracker : new java.util.ArrayList<>(watcher.trackers.values())) {
++            if (!tracker.active || !tracker.resumed || tracker.windowKind != FoldReelsPolicy.WindowKind.COMPACT || !tracker.recognized) continue;
++            View viewer = tracker.visibleViewer(); if (viewer == null) continue;
++            FoldReelsPreferences.Profile profile = FoldReels.prefs.read(false);
++            if (profile.card && profile.crop && tracker.renderer.transformedInside(host)
++                    && FoldReelsViews.descendant(media, viewer)) return true;
++        }
++        return false;
 +    }
 +    private FoldReelsNativeDecoration() {}
 +}
@@ -2835,7 +2906,7 @@ new file mode 100644
 index 0000000..e3229af
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsScrim.java
-@@ -0,0 +1,328 @@
+@@ -0,0 +1,364 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2917,6 +2988,9 @@ index 0000000..e3229af
 +                if (named) { only = candidate; slots = 1; } else edges = 0;
 +            }
 +        }
++        boolean mountedGradient = names.apply(v).equals("clips_bottom_legibility_gradient_component")
++                && mountedBottomGradient(v);
++        if (mountedGradient && edges == 0) edges = FoldReelsContrast.BOTTOM;
 +        if (edges == 0) return;
 +        View page = null;
 +        for (int i = 0; i < scopes.size(); i++) if (FoldReelsViews.descendant(v, scopes.get(i))) { page = pages.get(i); break; }
@@ -2930,12 +3004,44 @@ index 0000000..e3229af
 +                || ((edges & FoldReelsContrast.BOTTOM) != 0 && (relativeBottom < viewer.getHeight() * .65f || relativeBottom > viewer.getHeight() * 1.1f))
 +                || box.height() > viewer.getHeight() * .45f)) return;
 +        if (state == null) { state = new State(); states.put(v, state); v.addOnAttachStateChangeListener(this); }
-+        boolean leaf = !full && edges != FoldReelsContrast.BOTH && (named || (!container && slots == 1 && only instanceof GradientDrawable
-+                && !FoldReelsContrast.rounded((GradientDrawable) only) && v.getForeground() == null));
++        boolean leaf = mountedGradient || (!full && edges != FoldReelsContrast.BOTH && (named || (!container && slots == 1 && only instanceof GradientDrawable
++                && !FoldReelsContrast.rounded((GradientDrawable) only) && v.getForeground() == null)));
 +        if (state.leaf != leaf) state.restore(v);
 +        state.seen = generation; state.page = new WeakReference<>(page); state.edges = edges; state.full = full; state.leaf = leaf;
++        state.mountedGradient = mountedGradient;
 +        state.namedDrawable = named ? only : null;
 +        state.reason = named ? "named-native-edge-leaf" : full ? "native-page-contrast" : edges == FoldReelsContrast.TOP ? "native-top-contrast" : "native-bottom-contrast";
++    }
++    private static boolean mountedBottomGradient(View v) {
++        if (!(v instanceof ViewGroup) || v.isClickable() || v.isLongClickable()) return false;
++        ViewGroup group = (ViewGroup) v;
++        if (group.getChildCount() != 1) return false;
++        View child = group.getChildAt(0);
++        if (child.getWidth() != v.getWidth() || child.getHeight() != v.getHeight() || child.isClickable() || child.isLongClickable()) return false;
++        if (child.getBackground() instanceof android.graphics.drawable.ShapeDrawable && child.getForeground() == null) return true;
++        if (!FoldReelsViews.classIs(v, "com.facebook.litho.ComponentHost")
++                || !FoldReelsViews.classIs(child, "com.facebook.litho.ComponentHost")) return false;
++        try {
++            Object mounts = child.getClass().getMethod("getDrawables").invoke(child);
++            if (!(mounts instanceof java.util.List) || ((java.util.List<?>) mounts).size() != 1) return false;
++            Object value = ((java.util.List<?>) mounts).get(0);
++            if (!(value instanceof Drawable)) return false;
++            Drawable wrapper = (Drawable) value;
++            if (wrapper.getCallback() != child || !"X.07td".equals(wrapper.getClass().getName())) return false;
++            Drawable payload = null;
++            int drawableFields = 0;
++            for (Class<?> type = wrapper.getClass(); type != null && type != Drawable.class; type = type.getSuperclass()) {
++                if (type.getName().startsWith("android.")) break;
++                for (java.lang.reflect.Field field : type.getDeclaredFields()) {
++                    if (java.lang.reflect.Modifier.isStatic(field.getModifiers()) || !Drawable.class.isAssignableFrom(field.getType())) continue;
++                    field.setAccessible(true);
++                    Object nested = field.get(wrapper);
++                    if (nested instanceof Drawable) { drawableFields++; payload = (Drawable) nested; }
++                }
++            }
++            return drawableFields == 1 && payload instanceof android.graphics.drawable.ShapeDrawable
++                    && payload.getCallback() == wrapper;
++        } catch (ReflectiveOperationException | RuntimeException ignored) { return false; }
 +    }
 +    static Drawable original(Drawable drawable) {
 +        return drawable instanceof ExtendedGradient ? ((ExtendedGradient) drawable).nativeDrawable : drawable;
@@ -2978,6 +3084,7 @@ index 0000000..e3229af
 +            } else {
 +                s.target.bottom = viewport.bottom + offset; s.target.top = s.target.bottom - box.height();
 +            }
++            if (s.mountedGradient) { s.target.top = box.top + offset; s.target.bottom = viewport.bottom + offset; }
 +            // This is also the per-page clip: gradients on adjacent Reels cannot overlap.
 +            s.pageWindow.set(viewport); s.pageWindow.offset(0, offset);
 +            if (!Float.isFinite(offset) || box.width() <= 0 || box.height() <= 0 || s.target.isEmpty()
@@ -2987,7 +3094,7 @@ index 0000000..e3229af
 +                boolean stillContrast = s.namedDrawable != null && (v.getBackground() == s.namedDrawable
 +                        || (v instanceof ImageView && ((ImageView) v).getDrawable() == s.namedDrawable));
 +                for (int slot = 0; slot < 3; slot++) stillContrast |= FoldReelsContrast.edges(get(v, slot)) != 0;
-+                if (!stillContrast) { s.restore(v); continue; }
++                if (!stillContrast && !s.mountedGradient) { s.restore(v); continue; }
 +                s.apply(v, box, matrix);
 +            } else {
 +                matrix.reset(); v.transformMatrixToGlobal(matrix);
@@ -3048,7 +3155,7 @@ index 0000000..e3229af
 +    private static final class State {
 +        WeakReference<View> page = new WeakReference<>(null);
 +        Drawable namedDrawable;
-+        int seen, edges, replacements; String reason; boolean applied, leaf, full, outline, shadow; float elevation;
++        int seen, edges, replacements; String reason; boolean applied, leaf, full, mountedGradient, outline, shadow; float elevation;
 +        final ExtendedGradient[] drawables = new ExtendedGradient[3];
 +        final RectF source = new RectF(), local = new RectF(), pageWindow = new RectF();
 +        float sx, sy, x, y, asx, asy, ax, ay;
@@ -3473,7 +3580,7 @@ new file mode 100644
 index 0000000..f0f2e6c
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsDrawingTest.java
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,61 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Bitmap;
@@ -3486,6 +3593,7 @@ index 0000000..f0f2e6c
 +import android.view.View;
 +import android.widget.FrameLayout;
 +import org.junit.After;
++import java.util.concurrent.atomic.AtomicInteger;
 +import org.junit.Test;
 +import org.junit.runner.RunWith;
 +import org.robolectric.RobolectricTestRunner;
@@ -3739,7 +3847,7 @@ diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java
-@@ -0,0 +1,137 @@
+@@ -0,0 +1,139 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Canvas;
@@ -3775,7 +3883,7 @@ new file mode 100644
 +        FrameLayout nested=new FrameLayout(activity);add(info,nested,45,0,735,300);
 +        row=new FrameLayout(activity);add(nested,row,0,0,735,157);
 +        author=new FrameLayout(activity);author.setTag("clips_author_info_component");author.setClickable(true);add(row,author,0,0,432,157);
-+        avatar=new ImageView(activity);avatar.setTag("clips_author_profile_pic");add(author,avatar,0,42,101,101);
++        avatar=new FrameLayout(activity);avatar.setTag("clips_author_profile_pic");add(author,avatar,0,42,101,101);
 +        username=new FrameLayout(activity);username.setTag("clips_author_username");username.setClickable(true);add(author,username,101,63,331,59);
 +        FrameLayout followParent=new FrameLayout(activity);add(row,followParent,432,28,267,129);
 +        follow=new TextView(activity);follow.setTag("inline_follow_button");follow.setClickable(true);add(followParent,follow,17,23,210,89);
@@ -3793,7 +3901,7 @@ new file mode 100644
 +        assertEquals(0,follow.getTranslationX(),.01f);assertTrue(follow.isShown());
 +        assertEquals(735,row.getLayoutParams().width);assertEquals(157,row.getLayoutParams().height);
 +        assertEquals(735,caption.getLayoutParams().width);assertEquals(141,caption.getLayoutParams().height);
-+        assertEquals(32,caption.getClipBounds().height());
++        assertEquals(Math.min(20,caption.getHeight()),caption.getClipBounds().height());
 +    }
 +    @Test public void mountedRowsKeepNativeAuthorFollowAndCaptionTouch() {
 +        mounted(1);AtomicInteger hits=new AtomicInteger();author.setOnClickListener(v->hits.incrementAndGet());follow.setOnClickListener(v->hits.incrementAndGet());
@@ -3805,13 +3913,15 @@ new file mode 100644
 +            assertEquals("role="+name(v)+" bounds="+bounds(v)+" row="+bounds(row),++expected,hits.get());
 +        }
 +        RectF c=bounds(caption); RectF root=bounds(viewer); c.offset(-root.left,-root.top);
-+        send(MotionEvent.ACTION_DOWN,c.left+20,c.top+20);send(MotionEvent.ACTION_UP,c.left+20,c.top+20);
++        int lineY=Math.min(caption.getClipBounds().height()-1,15);
++        send(MotionEvent.ACTION_DOWN,c.left+20,c.top+lineY);send(MotionEvent.ACTION_UP,c.left+20,c.top+lineY);
 +        assertEquals("caption="+bounds(caption)+" clip="+caption.getClipBounds()+" text="+bounds(text),3,hits.get());
 +    }
 +    @Test public void captionInvisibleRemainderDoesNotConsumeTouches() {
 +        mounted(1);AtomicInteger hits=new AtomicInteger();View text=((FrameLayout)caption.getChildAt(0)).getChildAt(0);text.setOnClickListener(v->hits.incrementAndGet());
 +        discover();mode(FoldReelsMetadata.Mode.COMPACT);RectF c=bounds(caption);
-+        assertFalse(controls.routeTouch(viewer,touch(MotionEvent.ACTION_DOWN,c.left+20,c.top+60)));
++        int clipped=caption.getClipBounds().height();
++        assertFalse(controls.routeTouch(viewer,touch(MotionEvent.ACTION_DOWN,c.left+20,c.top+clipped+5)));
 +        assertEquals(0,hits.get());
 +    }
 +    @Test public void mountedProfileRestoreDoesNotChangeLithoLayoutOrDescendantOffsets() {
@@ -3882,7 +3992,7 @@ new file mode 100644
 index 0000000..ab6c300
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsNativeDecorationTest.java
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,71 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Bitmap;
@@ -3943,6 +4053,10 @@ index 0000000..ab6c300
 +        add(content,w,0,0,788,1400);assertFalse(FoldReels.skipRoundedCardDecoration(w));
 +        content.removeView(w);add(pages.get(1),w,106,0,788,1400);present(true);assertTrue(FoldReels.skipRoundedCardDecoration(w));
 +        card.restore();assertFalse(FoldReels.skipRoundedCardDecoration(w));
++    }
++    @Test public void mountedBorderGuardFailsClosedForUnrelatedDrawableAndMissingLease() {
++        assertFalse(FoldReelsNativeDecoration.skipMountedMediaBorder(new android.graphics.drawable.ColorDrawable(Color.WHITE), null));
++        assertFalse(FoldReelsNativeDecoration.skipMountedMediaBorder(null, null));
 +    }
 +    @Test public void diagnosticsRecordExecutionNotJustGeometryCandidates() {
 +        RoundedCornerFrameLayout w=wrapper(1);present(true);paint(w);paint(w);
@@ -4461,14 +4575,16 @@ new file mode 100644
 index 0000000..ee6168d
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsScrimTest.java
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,72 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Color;
 +import android.graphics.RectF;
 +import android.graphics.drawable.GradientDrawable;
++import android.graphics.drawable.ShapeDrawable;
 +import android.view.View;
 +import android.widget.FrameLayout;
++import java.util.concurrent.atomic.AtomicInteger;
 +import org.junit.Test;
 +import org.junit.runner.RunWith;
 +import org.robolectric.RobolectricTestRunner;
@@ -4497,6 +4613,20 @@ index 0000000..ee6168d
 +        swipe(700); apply(true);
 +        assertEquals(bounds(content).top-800,bounds(current).top,.01f); assertEquals(bounds(content).top+800,bounds(next).top,.01f);
 +        assertTrue(bounds(previous).bottom<bounds(current).top);
++    }
++    @Test public void mountedBottomGradientFillsWindowAndLeavesScrubberTouchable() {
++        FrameLayout host=new FrameLayout(activity); host.setTag("clips_bottom_legibility_gradient_component");
++        add(pages.get(1),host,106,1000,788,200);
++        FrameLayout mount=new FrameLayout(activity); add(host,mount,0,0,788,200); mount.setBackground(new ShapeDrawable());
++        FrameLayout controls=new FrameLayout(activity); add(pages.get(1),controls,106,1180,788,40);
++        View scrubber=new View(activity); scrubber.setClickable(true); AtomicInteger clicks=new AtomicInteger();
++        scrubber.setOnClickListener(v->clicks.incrementAndGet()); add(controls,scrubber,0,0,788,28);
++        RectF nativeGradient=bounds(host), window=bounds(content), scrubberBefore=bounds(scrubber);
++        renderer.discover(viewer); scrim.discover(renderer,viewer); apply(true);
++        RectF expanded=bounds(host); assertEquals(window.left,expanded.left,.01f); assertEquals(nativeGradient.top,expanded.top,.01f); assertEquals(window.right,expanded.right,.01f); assertEquals(window.bottom,expanded.bottom,.01f);
++        assertEquals(window.bottom,bounds(host).bottom,.01f); assertEquals(scrubberBefore,bounds(scrubber));
++        assertTrue(scrubber.isClickable()); scrubber.performClick(); assertEquals(1,clicks.get());
++        apply(false); assertEquals(1,host.getScaleX(),.001f); assertEquals(1,host.getScaleY(),.001f);
 +    }
 +    @Test public void interactiveHeaderUnknownDecorationAndOtherScreensStayNative() {
 +        View clickable=gradient(pages.get(1)); clickable.setClickable(true);
@@ -5013,7 +5143,7 @@ index 10591c8..3b6caf6 100644
  kotlin.code.style = official
  android.useAndroidX = true
 -version = 3.9.0
-+version = 4.1.8
++version = 4.1.9
 diff --git a/patches/build.gradle.kts b/patches/build.gradle.kts
 index 4a17b30..7380282 100644
 --- a/patches/build.gradle.kts
@@ -5077,7 +5207,7 @@ new file mode 100644
 index 0000000..caffdd0
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,113 @@
 +/*
 + * Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE.
 + */
@@ -5161,6 +5291,7 @@ index 0000000..caffdd0
 +        // The parent reference is resolved from this APK, not an obfuscated name from another build.
 +        val rounded = mutableClassDefBy(ROUNDED_CARD)
 +        replaceRoundedCardEntryBypass(rounded) { type -> classDefByOrNull(type) }
++        installLithoMediaBorderHook(mutableClassDefBy("LX/08Nt;"))
 +        var dispatch = viewerClass.methods.firstOrNull {
 +            it.name == "dispatchTouchEvent" && it.parameterTypes == listOf("Landroid/view/MotionEvent;") && it.returnType == "Z"
 +        }
@@ -5189,6 +5320,48 @@ index 0000000..caffdd0
 +            """)
 +        }
 +    }
++}
+diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/LithoMediaBorderHook.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/LithoMediaBorderHook.kt
+new file mode 100644
+index 0000000..ccccccc
+--- /dev/null
++++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/LithoMediaBorderHook.kt
+@@ -0,0 +1,36 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.crimera.patches.instagram.misc.reels
++
++import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
++import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
++import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
++import com.android.tools.smali.dexlib2.iface.reference.MethodReference
++
++private const val BORDER = "LX/08Nt;"
++private const val EXTENSION = "Lapp/morphe/extension/instagram/patches/reels/FoldReels;"
++
++/** Fail closed unless the observed BorderColorDrawable shape and draw entry remain stable. */
++internal fun installLithoMediaBorderHook(owner: MutableClass) {
++    require(owner.type == BORDER && owner.superclass == "Landroid/graphics/drawable/Drawable;")
++    val fields = owner.instanceFields.toList()
++    require(fields.count { it.type == "Landroid/graphics/Paint;" } == 1
++            && fields.count { it.type == "Landroid/graphics/Path;" } == 2
++            && fields.count { it.type == "Z" } == 1
++            && fields.count { it.type.startsWith("LX/") } == 1) { "Litho BorderColorDrawable shape changed" }
++    val draw = owner.methods.single { it.name == "draw" && it.parameterTypes.map { p -> p.toString() } == listOf("Landroid/graphics/Canvas;") && it.returnType == "V" }
++    val body = requireNotNull(draw.implementation)
++    require(body.instructions.none { i ->
++        val ref = (i as? ReferenceInstruction)?.reference as? MethodReference
++        ref?.definingClass == EXTENSION && ref.name == "skipMountedMediaBorder"
++    }) { "Litho border hook already installed" }
++    val local = (0 until body.registerCount - draw.parameterTypes.size - 1).firstOrNull()
++        ?: error("No local register for Litho border guard")
++    draw.addInstructionsWithLabels(0, """
++        invoke-static/range {p0 .. p0}, $EXTENSION->skipMountedMediaBorder(Landroid/graphics/drawable/Drawable;)Z
++        move-result v$local
++        if-eqz v$local, :fold_litho_border_native
++        return-void
++        :fold_litho_border_native
++        nop
++    """.trimIndent())
 +}
 diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AuditFoldApk.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AuditFoldApk.kt
 new file mode 100644
@@ -5552,7 +5725,7 @@ new file mode 100644
 index 0000000..9accfb3
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/morphe/util/VerifyFoldBundle.kt
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,55 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.util
 +
@@ -5575,6 +5748,7 @@ index 0000000..9accfb3
 +        val entryClass = dex.classes.single { it.type == "Lapp/morphe/extension/instagram/patches/reels/FoldReels;" }
 +        val expected = mapOf(
 +            "skipRoundedCardDecoration" to (listOf("Landroid/view/View;") to "Z"),
++            "skipMountedMediaBorder" to (listOf("Landroid/graphics/drawable/Drawable;") to "Z"),
 +            "attachViewer" to (listOf("Landroid/view/View;") to "V"),
 +            "beforeViewerDraw" to (listOf("Landroid/view/View;") to "V"),
 +            "routeTouch" to (listOf("Landroid/view/View;", "Landroid/view/MotionEvent;") to "Z")
@@ -6377,3 +6551,4 @@ index 00000000..f79c0415
 +        assertEquals(1,gradient.getAlpha(),0);assertNull(gradient.getClipBounds());
 +    }
 +}
+
