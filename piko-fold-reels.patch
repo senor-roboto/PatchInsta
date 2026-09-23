@@ -3580,7 +3580,7 @@ new file mode 100644
 index 0000000..f0f2e6c
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsDrawingTest.java
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,61 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Bitmap;
