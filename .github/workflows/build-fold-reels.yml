@@ -8,6 +8,7 @@ on:
       - release.json
       - scripts/**
       - .github/workflows/build-fold-reels.yml
+      - RELEASE-CANDIDATE-4.1.8.md
   workflow_dispatch:
 
 concurrency:
