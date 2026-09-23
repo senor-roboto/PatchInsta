@@ -65,7 +65,7 @@ Executed build gate: `./gradlew :extensions:instagram:testReleaseUnitTest :patch
 
 [CI artifact](https://github.com/senor-roboto/PatchInsta/actions/runs/34878804708/artifacts/10362630957): PatchInsta-4.1.8.mpp, SHA-256 `9374bb94f1bed8c5f07a0a758597d5162566d3e40691905efad264f41a91b7aa`. This is a temporary CI candidate, not a stable release. APK patch validation and device validation remain false.
 
-An unavailable local execution environment and missing original APK/APKM currently prevent repeating the complete Instagram 439 patch/rebuild test and inspecting X.07td in its real DEX. A build or Robolectric pass is not a replacement for those gates or a Samsung pixel test.
+The earlier local execution environment prevented repeating the complete Instagram 439 patch/rebuild test; subsequent local analysis inspected the original 439 DEX without publishing proprietary inputs. A build or Robolectric pass is not a replacement for those gates or a Samsung pixel test.
 
 Do not merge/release this work branch until the original-APK gate has been rerun. Final visible contour removal remains blocked on concrete drawable evidence.
 
@@ -83,11 +83,11 @@ from the existing branch; its HEAD and PR #6 both resolved to
 `7901ccfa674b37491ab7f217b41653ad9d1b66ec`. The full report above was read before edits.
 
 The original APKM is now actually accessible at
-`C:\Users\dy\Downloads\com.instagram.android_439.0.0.37.89-384510827_1dpi_f2d1bb9ab00454a16457d6c5bb735370_apkmirror.com (1)(1).apkm`.
+`<local original APKM path>`.
 SHA-256: `1f20e342cc878225c141c83125ea46773ee8ea9491b8bd0469907de496097c0e`.
 Its info.json confirms package/version/code/arm64; base.apk has 20 DEX files and
 14 native libraries. Local extracted data and tools are in
-`C:\Users\dy\Documents\PatchInsta\.work\`, excluded from Git. These are local working
+`<local workspace>/.work/`, excluded from Git. These are local working
 files, not a guarantee of retention. No proprietary APK or decompiled source is published.
 
 ### Actual original-DEX evidence
@@ -209,7 +209,7 @@ The final local run with the CI MPP completed `60` applied patches and `0` failu
 against the original APKM, with `Adaptive Fold Reels` and `Clone` enabled. The raw
 Morphe output contained 19 generated DEX files plus stale original `classes20.dex`.
 After fail-closed canonicalization, the final unsigned APK is
-`C:\Users\dy\Documents\PatchInsta\.work\instagram-4.1.8-final-60-canonical-unsigned.apk`.
+`<local workspace>/.work/instagram-4.1.8-final-60-canonical-unsigned.apk`.
 Normalization removed only that stale DEX, preserved all 14 native libraries byte for
 byte, passed ZIP integrity and 16 KB zipalign, and produced SHA-256
 `6b0031dae51e14c63016df594b2eb8800b8cfd7646ff9db6f2b16455fa407be2`.
