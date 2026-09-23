@@ -1,6 +1,6 @@
 # PatchInsta 4.1.8 candidate
 
-This is a prerelease candidate; stable Morphe remains 4.1.7.
+This is candidate 4.1.8, intended to become accessible from the existing Morphe source after publication; Fold visual validation remains unverified.
 
 
 - Corrige le rejet de la référence valide à ViewGroup dans le dispatch arrondi d'Instagram 439.
