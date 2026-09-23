@@ -1,6 +1,6 @@
 # PatchInsta 4.1.8 candidate — installation et utilisation
 
-Cette version est une prépublication. La 4.1.7 reste la source Morphe stable. La reconstruction locale 60/60 et le démarrage sur émulateur API 35 sont vérifiés ; le rendu visuel réel sur Fold/Réels et le compositeur Samsung restent à valider.
+Cette version est la candidate 4.1.8, destinée à devenir accessible depuis la source Morphe existante après publication. La reconstruction locale 60/60 et le démarrage sur émulateur API 35 sont vérifiés ; le rendu visuel réel sur Fold/Réels et le compositeur Samsung restent à valider.
 
 Bundle non officiel basé sur Piko 3.9.0 au commit `50744aa07bb41c4e1f942a06614ef4e6f2e3610c`. Cible inchangée : Instagram **439.0.0.37.89 / arm64-v8a / 384510827**, à partir de l’**APKM original non patché**.
 
