@@ -11,6 +11,27 @@ from unittest.mock import patch
 
 
 class DistributionTests(unittest.TestCase):
+    def test_4110_offline_gate_accepts_only_exact_authorized_candidate(self):
+        data = {**self.offline_evidence(), 'version': '4.1.10'}
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory)/'evidence.json'
+            evidence.write_text(json.dumps(data))
+            actual = load_publication_evidence(evidence, {'version': '4.1.10'}, '12345', 'a'*40, 'b'*64)
+            self.assertEqual(actual['physical_device_validation'], 'pending_user_test')
+            with self.assertRaisesRegex(ValueError, 'does not match'):
+                load_publication_evidence(evidence, {'version': '4.1.10'}, '999', 'a'*40, 'b'*64)
+            data['physical_device_validation'] = 'passed'
+            evidence.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError, 'must not claim'):
+                load_publication_evidence(evidence, {'version': '4.1.10'}, '12345', 'a'*40, 'b'*64)
+
+    def test_new_version_cannot_reuse_4110_publication_authorization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory)/'evidence.json'
+            evidence.write_text(json.dumps({**self.offline_evidence(), 'version': '4.1.11'}))
+            with self.assertRaisesRegex(ValueError, 'Unsupported'):
+                load_publication_evidence(evidence, {'version': '4.1.11'}, '12345', 'a'*40, 'b'*64)
+
     def offline_evidence(self):
         return {'schema':'patchinsta-authorized-offline-release/v1', 'version':'4.1.9',
                 'candidate_run_id':'12345', 'source_commit':'a'*40, 'mpp_sha256':'b'*64,

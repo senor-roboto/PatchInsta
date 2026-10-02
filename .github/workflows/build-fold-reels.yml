@@ -2,7 +2,7 @@ name: Build PatchInsta validation candidate
 
 on:
   push:
-    branches: [main, fix/rounded-dispatch-4.1.7, fix/litho-runtime-4.1.8, codex/fold-reels-4.1.9]
+    branches: [main, fix/rounded-dispatch-4.1.7, fix/litho-runtime-4.1.8, codex/fold-reels-4.1.9, codex/fold-reels-4.1.10]
     paths:
       - piko-fold-reels.patch
       - release.json
@@ -81,4 +81,3 @@ jobs:
           path: output/
           if-no-files-found: error
           retention-days: 30
-

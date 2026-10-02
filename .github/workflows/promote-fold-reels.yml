@@ -1,9 +1,9 @@
-name: Publish verified PatchInsta 4.1.9
+name: Publish verified PatchInsta 4.1.10
 
 on:
   push:
     branches: [main]
-    paths: [validation/release-4.1.9.json]
+    paths: [validation/release-4.1.10.json]
   workflow_dispatch:
     inputs:
       candidate_run_id:
@@ -25,14 +25,14 @@ permissions:
   packages: read
 
 concurrency:
-  group: patchinsta-promotion-4.1.9
+  group: patchinsta-promotion-4.1.10
   cancel-in-progress: false
 
 jobs:
   promote:
     # One delivery only: the currently authorized main transition. Later pushes
     # cannot satisfy this predecessor guard. Manual retries remain explicit.
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event.before == '88555f1a9d9542395dbb18ae9777530fb1bab68b')
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event.before == '9914eeeb2c24d338657ab0ef7539509ed6742241')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -44,8 +44,8 @@ jobs:
       - name: Download the exact candidate run
         uses: actions/download-artifact@v4
         with:
-          name: PatchInsta-${{ github.event.inputs.candidate_run_id || '37001703841' }}
-          run-id: ${{ github.event.inputs.candidate_run_id || '37001703841' }}
+          name: PatchInsta-${{ github.event.inputs.candidate_run_id || '37019425034' }}
+          run-id: ${{ github.event.inputs.candidate_run_id || '37019425034' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: output
       - name: Select truthful publication evidence
@@ -55,7 +55,7 @@ jobs:
           python3 - <<'PY'
           import os, pathlib
           supplied = os.environ['VALIDATION_EVIDENCE']
-          record = supplied or pathlib.Path('validation/release-4.1.9.json').read_text()
+          record = supplied or pathlib.Path('validation/release-4.1.10.json').read_text()
           pathlib.Path('validation-evidence.json').write_text(record, encoding='utf-8')
           PY
       - name: Verify evidence and publish the exact MPP
@@ -64,8 +64,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
-          CANDIDATE_RUN_ID: ${{ github.event.inputs.candidate_run_id || '37001703841' }}
-          EXPECTED_MPP_SHA256: ${{ github.event.inputs.mpp_sha256 || 'c65259d8f9891d8a9e38fcc47e4f37e06216e64df780c4a1526d422a14089308' }}
+          CANDIDATE_RUN_ID: ${{ github.event.inputs.candidate_run_id || '37019425034' }}
+          EXPECTED_MPP_SHA256: ${{ github.event.inputs.mpp_sha256 || '57bc649d7e8aa06aae88ead012f4778911aeca0764dce02d1294a921e922ee23' }}
         run: python3 scripts/publish.py --promote --evidence validation-evidence.json
       - name: Preserve the promotion record
         if: always()

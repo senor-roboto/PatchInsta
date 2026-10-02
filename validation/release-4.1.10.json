@@ -1,0 +1,78 @@
+{
+  "schema": "patchinsta-authorized-offline-release/v1",
+  "version": "4.1.10",
+  "release_tag_tracks_publication_commit": true,
+  "candidate_run_id": "37019425034",
+  "source_commit": "229300566ca1affa927e5e2bdcf0e96b2bd2be12",
+  "mpp_sha256": "57bc649d7e8aa06aae88ead012f4778911aeca0764dce02d1294a921e922ee23",
+  "user_requested_publication_without_physical_test": true,
+  "physical_device_validation": "pending_user_test",
+  "requested_at": "2026-10-02",
+  "authorization": "User explicitly authorized validation and publication through the existing Morphe source after automated and useful physical checks. The full five-fold-cycle protocol is not claimed; actual targeted results and native static-media fallback are documented separately.",
+  "original_apkm_sha256": "1f20e342cc878225c141c83125ea46773ee8ea9491b8bd0469907de496097c0e",
+  "lab_apk_sha256": "f68591d355b79716508171c06c20066221f262d62d83b4bc6893a2a39509eebc",
+  "checks": {
+    "all_60_patches_applied": true,
+    "original_classes_retained": true,
+    "no_duplicate_classes": true,
+    "native_libraries_unchanged": true,
+    "border_guard_verified": true,
+    "apk_signature_verified": true,
+    "zip_alignment_verified": true,
+    "emulator_startup_pass": true
+  },
+  "emulator": {
+    "android_sdk": 35,
+    "isolated_package": "com.instagram.android.patchinstalab",
+    "launch_status": "ok",
+    "activity": "com.instagram.modal.ModalActivity",
+    "crash_buffer": "empty",
+    "reels_visual_test": false
+  },
+  "automated_tests": {
+    "android_scenarios": 167,
+    "bytecode_guard_tests": 22,
+    "policy_geometry_checks": 305,
+    "mapping_checks": 13
+  },
+  "targeted_physical_validation": {
+    "tested_at": "2026-10-02",
+    "device": {
+      "model": "SM_F971B",
+      "android_version": "17",
+      "one_ui_version": "9.0"
+    },
+    "instagram_version": "439.0.0.37.89",
+    "isolated_package": "com.instagram.android.patchinstalab",
+    "cold_starts": 10,
+    "swipes": 30,
+    "fold_cycles": 1,
+    "observed": {
+      "recognized_video_reels_no_card_border": true,
+      "video_caption_readable_both_screens": true,
+      "clean_inner_sidebar_hidden": true,
+      "comments_open_and_close": true,
+      "horizontal_seek_advances_media": true,
+      "vertical_swipe_from_scrubber_changes_reel": true,
+      "cover_default_clean": true,
+      "inner_default_full_instagram": true,
+      "temporary_toggle_preserves_saved_default": true,
+      "independent_default_settings_verified_in_ui": true,
+      "no_lab_crash_detected": true,
+      "original_screen_timeout_restored": true
+    },
+    "limitations": [
+      "Static posts/carousels retain native rendering when no video renderer is recognized.",
+      "One physical fold round trip was tested; the full five-cycle protocol was not completed.",
+      "Native caption expansion and every action variant were not comprehensively exercised on hardware."
+    ],
+    "local_screenshot_sha256": [
+      "40c3b5e3331bb4b8543d8875c729cb31d330f08ac2e1d14f2723e78f8916322f",
+      "b5243512d4068b163f8b88c3356a0d3b16eccfc2eebe14b03b12a844e9e911d1",
+      "06dd3ede8145c54ea5865639e9fd2e523edf22e470d60d22a6c016beeb85b7b2",
+      "1ac30a69699b1919bbd6f4a4e864a615a106eef2f553686389012b14ebe8211f",
+      "5ffac1bbf289d660128245d8b8811287bb1f82088e843ef636682606a867922e",
+      "8ee21299ad60180c197b460e87ef4cdd9217758541dda717b052d58b08992d67"
+    ]
+  }
+}

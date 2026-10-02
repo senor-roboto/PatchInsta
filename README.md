@@ -2,11 +2,12 @@
 
 **Adaptive Fold Reels**, dérivé non officiel de Piko, pour les deux écrans du Galaxy Z Fold.
 
-La **4.1.9** cible le cadre Litho identifié dans le diagnostic Fold et mesure la
-première ligne de légende au lieu d'utiliser une hauteur fixe. **141 scénarios Android**
-et **22 contrôles bytecode** passent. Les **60 patches** ont été appliqués au véritable
-APKM Instagram 439 ; l'APK isolé démarre dans l'émulateur. Le rendu des Reels sur le
-Fold reste à confirmer par l'utilisateur. [Preuves](VALIDATION-4.1.9.md).
+La **4.1.10** étend Plein écran propre aux deux écrans, avec une icône de preset,
+une réactivation fiable à la réouverture et une jauge native adaptée au viewport.
+Le défaut est propre sur l’écran externe et complet sur l’interne ; les réglages
+permettent de choisir chaque défaut, tandis que l’appui court reste temporaire.
+Le résultat externe de la 4.1.9, validé par l’utilisateur, est conservé.
+[Validation et limites de la 4.1.10](VALIDATION-4.1.10.md).
 
 Cible : **Instagram 439.0.0.37.89**, APKM original, **arm64-v8a / versionCode 384510827**. Aucun APK Instagram n’est distribué.
 
@@ -28,19 +29,16 @@ Le dépôt est désormais public. Si PatchInsta est déjà ajouté dans Morphe, 
 2. Ajouter la source distante une fois. Pour cette opération Instagram, sélectionner ses patchs uniquement : PatchInsta inclut déjà Piko. Désélectionner les anciennes sources locales Fold et Piko officiel pour éviter les doublons.
 3. Choisir l’APKM original compatible, puis **Adaptive Fold Reels** et les patchs Piko habituels, dont **Add settings**. Le patch Fold est optionnel, à cocher explicitement.
 4. Garder **exactement le même package Clone et la même clé de signature** ; patcher, puis installer par-dessus le clone actuel. Ne pas le désinstaller.
-5. Dans un Réel, faire un appui long sur **Entière / Remplir**, puis choisir **Plein écran propre** sur l’écran externe. Les anciens réglages explicitement enregistrés sont conservés/migrés ; ce preset applique tous les nouveaux choix.
+5. Dans un Réel, toucher l’**icône plein écran** pour choisir **Plein écran propre** sur chaque écran ; un appui long ouvre le menu. Les anciens réglages explicitement enregistrés sont conservés/migrés ; ce preset applique tous les nouveaux choix.
 
 ## Présentation
 
-| Profil | Écran externe, « Plein écran propre » | Écran interne, défaut |
-|---|---|---|
-| Vidéo | Remplissage/crop live | Vidéo native entière |
-| Barres Android / onglets Instagram | Masqués pendant les Réels | Conservés |
-| Actions | Commentaire seul et compteur associé | Toutes |
-| Auteur et caption | Vues natives compactes, y compris les calques frères et les comptes déjà suivis | Présentation complète |
-| Décor et dégradé | Décor reconnu adapté ; gradients natifs haut/bas redessinés dans la fenêtre | État natif restauré |
-
-**Instagram complet** restaure la présentation native du cover. **Personnaliser** donne accès aux trois modes d’actions, trois modes de métadonnées et aux options indépendantes. Le cadrage, le zoom et le raccourci sont mémorisés par écran. Aucun changement de mode, pliage ou swipe ne demande un rechargement automatique du lecteur.
+Les deux écrans proposent **Plein écran propre** (crop proportionnel, commentaire seul,
+métadonnées compactes, cadre reconnu nettoyé, dégradé natif adapté et jauge basse)
+et **Instagram complet** (présentation native). Les préférences sont indépendantes.
+Le tap bref sur l’icône applique un preset complet ; l’appui long ouvre les options.
+L’écran interne reste natif par défaut. Les anciens réglages enregistrés sont conservés.
+Aucun pliage, swipe ou changement de preset ne recharge automatiquement le lecteur.
 
 Le bloc interactif reste à l’intérieur des limites tactiles du viewer. Une variante dont ces limites s’arrêtent au-dessus des anciens onglets peut donc conserver un retrait en bas ; le patch privilégie des boutons fonctionnels. Le bandeau partagé reconnu reste ancré au viewport et le raccourci se place en dessous. Un décor ou une structure non reconnus restent natifs. Le diagnostic explique les détections sans copier de contenu utilisateur.
 
@@ -52,7 +50,7 @@ Le package et la signature doivent rester identiques. Réinstaller Morphe sans r
 
 ## Téléchargement manuel durable de la version publiée
 
-[PatchInsta-4.1.7.mpp](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.7/PatchInsta-4.1.7.mpp) · [PatchInsta-4.1.7.zip](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.7/PatchInsta-4.1.7.zip) · [SHA-256](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.7/SHA256SUMS.txt)
+[PatchInsta-4.1.10.mpp](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.10/PatchInsta-4.1.10.mpp) · [PatchInsta-4.1.10.zip](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.10/PatchInsta-4.1.10.zip) · [SHA-256](https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.10/SHA256SUMS.txt)
 
 Les fichiers de Release sont durables. Les artefacts Actions servent uniquement au transfert et au diagnostic de CI.
 
@@ -60,7 +58,7 @@ Les fichiers de Release sont durables. Les artefacts Actions servent uniquement 
 
 Appliquer `piko-fold-reels.patch` à [Piko au commit épinglé](https://github.com/crimera/piko/tree/50744aa07bb41c4e1f942a06614ef4e6f2e3610c). Java 17, Android SDK et accès Maven Morphe nécessaires. La [CI](https://github.com/senor-roboto/PatchInsta/actions/workflows/build-fold-reels.yml) vérifie l’application du diff, les tests, les 13 mappings et les ressources FR/EN, compile le `.mpp`, le charge avec Morphe, puis vérifie le ZIP et les téléchargements de Release. Aucune publication si un de ces contrôles échoue.
 
-`release.json`, le manifeste compilé et le JSON Morphe doivent porter la même version. Pour publier ensuite, augmenter la version dans `release.json` et dans le patch de `gradle.properties`, ajouter une entrée **Instagram** au [CHANGELOG](CHANGELOG.md), puis pousser sur `main`. Le workflow publie les assets avant le feed, sans force-push. Il ne remplace jamais un binaire déjà publié sous la même version.
+`release.json`, le manifeste compilé et le JSON Morphe doivent porter la même version. La publication séparée promeut un candidat précis avec son empreinte MPP et ses preuves de validation. Elle vérifie les téléchargements de Release avant de mettre à jour la source Morphe, sans remplacer un binaire déjà publié.
 
 Les tests Android simulent des vues et gestes ; ils ne décodent pas les vidéos Instagram ni le compositeur Samsung. Le nouvel APK doit encore être essayé sur l’appareil.
 

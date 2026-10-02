@@ -92,7 +92,10 @@ def metadata(config, release):
     version_tuple(config['version'])
     # Manager's DTO uses kotlinx.datetime.LocalDateTime, without a timezone suffix.
     created = datetime.fromisoformat(release['published_at'].replace('Z','+00:00')).astimezone(timezone.utc).replace(tzinfo=None).isoformat(timespec='seconds')
-    description = ('Instagram 439 : correction du cadre Litho des Reels et mesure native de la légende ; '
+    description = ('Instagram 439 : plein écran propre sur les deux écrans Fold, icône de preset et jauge native ; '
+                   '167 scénarios Android, 60 patches et démarrage isolé vérifiés. Tests réels ciblés documentés ; validation complète à confirmer.'
+                   if config['version'] == '4.1.10' else
+                   'Instagram 439 : correction du cadre Litho des Reels et mesure native de la légende ; '
                    '141 scénarios Android, 60 patches et démarrage isolé vérifiés. Rendu Fold à confirmer.'
                    if config['version'] == '4.1.9' else
                    'Instagram 439 : chemin normal RoundedCornerFrameLayout vérifié même avec handlers R8 ; garde bytecode conservé.')
@@ -135,8 +138,8 @@ def load_device_evidence(path, config, candidate_run_id, source_commit, mpp_sha2
     for key, value in expected.items():
         if evidence.get(key) != value:
             raise ValueError(f'Physical validation evidence {key} does not match candidate')
-    if config['version'] != '4.1.9':
-        raise ValueError('This promotion gate is reserved for the 4.1.9 release')
+    if config['version'] not in ('4.1.9', '4.1.10'):
+        raise ValueError('This promotion gate is reserved for the authorized 4.1.9 and 4.1.10 releases')
     for key in ('attested_by', 'tested_at'):
         if not isinstance(evidence.get(key), str) or not evidence[key].strip():
             raise ValueError(f'Physical validation evidence requires {key}')
@@ -171,7 +174,7 @@ def load_publication_evidence(path, config, candidate_run_id, source_commit, mpp
     evidence = json.loads(Path(path).read_text())
     if evidence.get('schema') == 'patchinsta-device-validation/v1':
         return load_device_evidence(path, config, candidate_run_id, source_commit, mpp_sha256)
-    if evidence.get('schema') != 'patchinsta-authorized-offline-release/v1' or config['version'] != '4.1.9':
+    if evidence.get('schema') != 'patchinsta-authorized-offline-release/v1' or config['version'] not in ('4.1.9', '4.1.10'):
         raise ValueError('Unsupported publication evidence schema or version')
     for key, value in {'version': config['version'], 'candidate_run_id': str(candidate_run_id),
                        'source_commit': source_commit, 'mpp_sha256': mpp_sha256}.items():
@@ -196,14 +199,15 @@ def load_publication_evidence(path, config, candidate_run_id, source_commit, mpp
 def publication_validation_note(evidence):
     if evidence['schema'] == 'patchinsta-authorized-offline-release/v1':
         return ('Automated checks and isolated APK startup passed. Published at the user\'s explicit '
-                'request for installation through the existing Morphe source. Physical Samsung Fold '
-                'Reels rendering remains to be confirmed by the user; no visual device pass is claimed.')
+                'request for installation through the existing Morphe source. Complete Samsung Fold '
+                'validation remains to be confirmed; any limited physical checks are documented '
+                'separately in the versioned validation report. No complete device pass is claimed.')
     return 'Physical Samsung Fold validation passed.'
 
 
 def verify_candidate(root, config, candidate_run_id, requested_sha, evidence_path):
-    if config['version'] != '4.1.9':
-        raise ValueError('This promotion workflow is reserved for the 4.1.9 release')
+    if config['version'] not in ('4.1.9', '4.1.10'):
+        raise ValueError('This promotion workflow is reserved for the authorized 4.1.9 and 4.1.10 releases')
     expected = verify_kit(root/'output', config)
     stem = 'PatchInsta-'+config['version']
     mpp_sha256 = expected[stem+'.mpp']
@@ -334,5 +338,5 @@ if __name__ == '__main__':
     parser.add_argument('--evidence', default='validation-evidence.json', help='publication validation JSON file')
     args = parser.parse_args()
     if not args.promote:
-        parser.error('Direct publication is disabled; use the 4.1.9 promotion workflow')
+        parser.error('Direct publication is disabled; use the guarded promotion workflow')
     publish(Path(__file__).resolve().parents[1], Path(args.evidence))
