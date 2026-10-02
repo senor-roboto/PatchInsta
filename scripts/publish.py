@@ -273,17 +273,20 @@ def publish(root, evidence_path):
     if release is None:
         # Use the POST response's numeric ID rather than trying to rediscover a new
         # draft through a public, potentially stale collection or /tags endpoint.
-        release = api(base+'/releases', {'tag_name':tag,'target_commitish':source_commit,
+        # Tag the current publication commit: tagging the earlier candidate would
+        # require workflows:write when its workflow files differ from main.
+        # Build provenance remains the candidate's source_commit and pinned MPP.
+        release = api(base+'/releases', {'tag_name':tag,'target_commitish':main_head,
                       'name':'PatchInsta '+config['version'],'draft':True,
                       'body':release_body})
     # Published releases are immutable here. A retry may finish publishing the feed but never
     # silently replace the already-distributed binary, which contains a build timestamp.
     if release['draft']:
-        if release['target_commitish'] != source_commit or release['tag_name'] != tag:
+        if release['target_commitish'] != main_head or release['tag_name'] != tag:
             if release['assets'] or release['name'] != 'PatchInsta '+config['version'] or release['author']['login'] != 'github-actions[bot]':
                 raise ValueError('Nonempty or foreign draft belongs to a different source commit')
             release = api(base+'/releases/'+str(release['id']),
-                          {'tag_name':tag,'target_commitish':source_commit,'body':release_body}, 'PATCH')
+                          {'tag_name':tag,'target_commitish':main_head,'body':release_body}, 'PATCH')
         release['assets'] = upload_assets(base,release,root/'output')
     with tempfile.TemporaryDirectory() as temp:
         download_assets(base,release['assets'],temp)
@@ -296,7 +299,7 @@ def publish(root, evidence_path):
         print('Authenticated release download verified:',json.dumps(actual,sort_keys=True))
     if release['draft']:
         release = api(base+'/releases/'+str(release['id']),
-                      {'tag_name':tag,'target_commitish':source_commit,'draft':False,'make_latest':'true'}, 'PATCH')
+                      {'tag_name':tag,'target_commitish':main_head,'draft':False,'make_latest':'true'}, 'PATCH')
         if release['draft'] or release['tag_name'] != tag:
             raise ValueError('GitHub did not publish the requested versioned release')
     feed = metadata(config, release)

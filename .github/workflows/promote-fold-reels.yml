@@ -32,7 +32,7 @@ jobs:
   promote:
     # One delivery only: the currently authorized main transition. Later pushes
     # cannot satisfy this predecessor guard. Manual retries remain explicit.
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event.before == 'd139821fb4303420c37aff6d22ed0cb99dbc2394')
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event.before == '88555f1a9d9542395dbb18ae9777530fb1bab68b')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
