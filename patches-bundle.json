@@ -1,8 +1,8 @@
 {
-  "created_at": "2026-10-02T12:00:49",
-  "description": "Instagram 439 : correction du cadre Litho des Reels et mesure native de la l\u00e9gende ; 141 sc\u00e9narios Android, 60 patches et d\u00e9marrage isol\u00e9 v\u00e9rifi\u00e9s. Rendu Fold \u00e0 confirmer.",
-  "download_url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.9/PatchInsta-4.1.9.mpp",
+  "created_at": "2026-10-02T15:01:56",
+  "description": "Instagram 439 : plein \u00e9cran propre sur les deux \u00e9crans Fold, ic\u00f4ne de preset et jauge native ; 167 sc\u00e9narios Android, 60 patches et d\u00e9marrage isol\u00e9 v\u00e9rifi\u00e9s. Tests r\u00e9els cibl\u00e9s document\u00e9s ; validation compl\u00e8te \u00e0 confirmer.",
+  "download_url": "https://github.com/senor-roboto/PatchInsta/releases/download/v4.1.10/PatchInsta-4.1.10.mpp",
   "signature_download_url": null,
-  "page_url": "https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.9",
-  "version": "4.1.9"
+  "page_url": "https://github.com/senor-roboto/PatchInsta/releases/tag/v4.1.10",
+  "version": "4.1.10"
 }
