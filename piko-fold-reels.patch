@@ -6841,7 +6841,7 @@ diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgressTest.java
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,56 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.RectF;
@@ -6861,21 +6861,27 @@ new file mode 100644
 +public class FoldReelsProgressTest extends FoldReelsTestFixture {
 +    final FoldReelsProgress progress=new FoldReelsProgress(FoldReelsTestFixture::name);
 +    VideoScrubberSeekBar scrubber;
-+    void setupBar(){scrubber=new VideoScrubberSeekBar(activity);scrubber.setTag("scrubber");
++    void setupBar(){
++        // Match clean-mode window chrome: system bar color views are hidden by the real Bars component.
++        for(int id:new int[]{android.R.id.statusBarBackground,android.R.id.navigationBarBackground}) {
++            View bar=activity.findViewById(id);if(bar!=null)bar.setVisibility(View.GONE);
++        }
++        scrubber=new VideoScrubberSeekBar(activity);scrubber.setTag("scrubber");
 +        add(pages.get(1),scrubber,106,1350,788,28);renderer.discover(viewer);progress.discover(renderer,viewer,controls);}
++    void globalSend(int action,float x,float y){RectF root=bounds(viewer);send(action,x-root.left,y-root.top);}
 +    void apply(boolean enabled){clipping.beginFrame();clipping.openBoundary(content);renderer.frame(viewer,fullViewport(),content,enabled,1,clipping);
 +        progress.frame(viewer,fullViewport(),content,content,enabled,controls,clipping);clipping.endFrame();}
 +    @After public void release(){progress.restore(controls);}
 +    @Test public void nativeBarFollowsFullWindowWidthAndBottomWhileKeepingItsHeight(){setupBar();apply(true);
-+        RectF b=bounds(scrubber);assertEquals(8,b.left,.01f);assertEquals(992,b.right,.01f);assertEquals(1592,b.bottom,.01f);
++        RectF b=bounds(scrubber);assertEquals(8,b.left,.01f);assertEquals(992,b.right,.01f);assertEquals(fullViewport().bottom-8,b.bottom,.01f);
 +        assertEquals(28,b.height(),.01f);assertEquals(1,scrubber.getScaleY(),.001f);assertEquals(788,scrubber.getWidth());}
 +    @Test public void restoringNativePresentationRestoresGeometryAndRemovesHitSurface(){setupBar();RectF original=bounds(scrubber);int count=content.getChildCount();apply(true);
 +        assertEquals(count+1,content.getChildCount());apply(false);assertEquals(original,bounds(scrubber));assertEquals(count,content.getChildCount());}
 +    @Test public void horizontalSeekKeepsACompleteNativeStreamAndMapsTheTrueRange(){setupBar();apply(true);RectF b=bounds(scrubber);
-+        send(MotionEvent.ACTION_DOWN,b.left+b.width()*.25f,b.centerY());send(MotionEvent.ACTION_MOVE,b.left+b.width()*.75f,b.centerY());send(MotionEvent.ACTION_UP,b.left+b.width()*.75f,b.centerY());
++        globalSend(MotionEvent.ACTION_DOWN,b.left+b.width()*.25f,b.centerY());globalSend(MotionEvent.ACTION_MOVE,b.left+b.width()*.75f,b.centerY());globalSend(MotionEvent.ACTION_UP,b.left+b.width()*.75f,b.centerY());
 +        assertEquals(java.util.Arrays.asList(0,2,1),scrubber.actions);assertEquals(788*.75f,scrubber.lastX,.5f);assertTrue(viewer.nativeActions.isEmpty());}
 +    @Test public void verticalSwipeCancelsSeekingAndReturnsTheFullStreamToThePager(){setupBar();apply(true);RectF b=bounds(scrubber);
-+        send(MotionEvent.ACTION_DOWN,b.centerX(),b.centerY());send(MotionEvent.ACTION_MOVE,b.centerX(),b.centerY()-100);send(MotionEvent.ACTION_UP,b.centerX(),b.centerY()-100);
++        globalSend(MotionEvent.ACTION_DOWN,b.centerX(),b.centerY());globalSend(MotionEvent.ACTION_MOVE,b.centerX(),b.centerY()-100);globalSend(MotionEvent.ACTION_UP,b.centerX(),b.centerY()-100);
 +        assertTrue(scrubber.actions.contains(MotionEvent.ACTION_CANCEL));assertEquals(java.util.Arrays.asList(0,2,1),viewer.nativeActions);}
 +    @Test public void proxyStripForwardsSeekingBelowTheOldViewerTouchRectangle(){setupBar();apply(true);
 +        View hit=content.getChildAt(content.getChildCount()-1);FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)hit.getLayoutParams();
@@ -6885,7 +6891,7 @@ new file mode 100644
 +        MotionEvent up=touch(1,lp.width*.5f,2);assertTrue(hit.dispatchTouchEvent(up));up.recycle();assertEquals(394,scrubber.lastX,.5f);}
 +    @Test public void opaqueNativeCommentSheetWinsOverTheProgressTouchProxy(){setupBar();apply(true);
 +        View sheet=new View(activity);sheet.setBackgroundColor(android.graphics.Color.BLACK);sheet.setClickable(true);add(content,sheet,0,1200,1000,400);
-+        RectF b=bounds(scrubber);send(0,b.centerX(),b.centerY());send(1,b.centerX(),b.centerY());assertTrue(scrubber.actions.isEmpty());}
++        RectF b=bounds(scrubber);globalSend(0,b.centerX(),b.centerY());globalSend(1,b.centerX(),b.centerY());assertTrue(scrubber.actions.isEmpty());}
 +    @Test public void removedAndReplacedScrubberRestoresTheOldBarAndBindsTheNewOne(){setupBar();apply(true);VideoScrubberSeekBar old=scrubber;
 +        pages.get(1).removeView(old);setupBar();apply(true);assertEquals(1,old.getScaleX(),.001f);assertEquals(992,bounds(scrubber).right,.01f);}
 +    @Test public void landscapeResizeRepositionsWithoutChangingNativePlaybackOrProgress(){setupBar();scrubber.setProgress(42);apply(true);
