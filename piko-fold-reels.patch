@@ -105,7 +105,7 @@ diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
-@@ -0,0 +1,617 @@
+@@ -0,0 +1,619 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -508,6 +508,7 @@ new file mode 100644
 +                return out.append("END-DIAGNOSTIC\n").toString();
 +            }
 +            final RectF lastViewport = new RectF();
++            final RectF metadataViewport = new RectF();
 +            final FoldReelsViewport spaces = new FoldReelsViewport();
 +            Tracker(Activity activity) { owner = new WeakReference<>(activity); }
 +            boolean hasViewer(View view) { for (WeakReference<View> ref : viewers) if (ref.get() == view) return true; return false; }
@@ -636,16 +637,17 @@ new file mode 100644
 +                    recognized = false;
 +                    guarded("renderer", () -> recognized = renderer.frame(viewer, viewport, clipBoundary, p.crop, p.zoom, clipping), renderer::restore);
 +                    guarded("controls", () -> controls.frame(viewer, viewport, spaces.interactive, inner, p.edges, p.actions, clipping), controls::restore);
-+                    FoldReelsMetadata.Mode metadataMode = failures.containsKey("controls") ? FoldReelsMetadata.Mode.FULL : p.metadata;
-+                    guarded("metadata", () -> metadata.frame(viewer, viewport, spaces.interactive, metadataMode, controls, clipping), () -> metadata.restore(controls));
-+                    guarded("card", () -> card.frame(p.crop && p.card && recognized), card::restore);
-+                    FoldReelsNativeDecoration.frame(watcher);
-+                    guarded("header", () -> header.frame(viewer, viewport, scope, p.crop, p.crop && prefs.hideHeader(inner), clipping), header::restore);
-+                    guarded("scrim", () -> scrim.frame(viewer, viewport, clipBoundary, p.crop && recognized, p.card, clipping), scrim::restore);
 +                    FrameLayout touchHost = a.getWindow().getDecorView() instanceof FrameLayout
 +                            ? (FrameLayout) a.getWindow().getDecorView() : content.get();
 +                    guarded("progress", () -> progress.frame(viewer, viewport, clipBoundary, touchHost,
 +                            recognized && prefs.clean(inner) && a.hasWindowFocus(), controls, clipping), () -> progress.restore(controls));
++                    metadataViewport.set(spaces.interactive); progress.constrainMetadata(metadataViewport);
++                    FoldReelsMetadata.Mode metadataMode = failures.containsKey("controls") ? FoldReelsMetadata.Mode.FULL : p.metadata;
++                    guarded("metadata", () -> metadata.frame(viewer, viewport, metadataViewport, metadataMode, controls, clipping), () -> metadata.restore(controls));
++                    guarded("card", () -> card.frame(p.crop && p.card && recognized), card::restore);
++                    FoldReelsNativeDecoration.frame(watcher);
++                    guarded("header", () -> header.frame(viewer, viewport, scope, p.crop, p.crop && prefs.hideHeader(inner), clipping), header::restore);
++                    guarded("scrim", () -> scrim.frame(viewer, viewport, clipBoundary, p.crop && recognized, p.card, clipping), scrim::restore);
 +                } finally { clipping.endFrame(); }
 +                guarded("shortcut", () -> updateChip(a, viewer, p), () -> removeChip());
 +            }
@@ -979,7 +981,7 @@ diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsChrome.java
-@@ -0,0 +1,128 @@
+@@ -0,0 +1,140 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1021,7 +1023,7 @@ new file mode 100644
 +        if (view.getVisibility() == View.GONE) return;
 +        if (tabsOnly && view == viewer) return;
 +        String name = names.apply(view);
-+        if (tabsOnly && isBottomTabs(view, viewer, name)) {
++        if (tabsOnly && (isBottomTabs(view, viewer, name) || isSideNavigation(view, viewer, name))) {
 +            remember(view, true, false, true);
 +            if (view.getParent() instanceof ViewGroup) {
 +                ViewGroup parent = (ViewGroup) view.getParent();
@@ -1060,6 +1062,18 @@ new file mode 100644
 +        if (!viewer.getGlobalVisibleRect(reels)) return false;
 +        return view.getWidth() >= reels.width() * .8f && view.getHeight() > 0
 +                && view.getHeight() <= 120 * density && pos[1] >= reels.bottom - 32 * density;
++    }
++    private static boolean isSideNavigation(View view, View viewer, String name) {
++        // Exact inflated Instagram 439 navigation host observed on the Fold.
++        // Keep its layout slot so hiding/restoration does not relayout the pager.
++        if (!name.equals("ls_vertical_nav_bar_stub") || !(view instanceof ViewGroup)
++                || ((ViewGroup) view).getChildCount() == 0) return false;
++        Rect reels = new Rect(); int[] pos = new int[2]; view.getLocationOnScreen(pos);
++        float density = view.getResources().getDisplayMetrics().density;
++        if (!viewer.getGlobalVisibleRect(reels)) return false;
++        return view.getWidth() > 0 && view.getWidth() <= 120*density
++                && view.getHeight() >= reels.height()*.75f
++                && pos[0]+view.getWidth() <= reels.left+2*density;
 +    }
 +    static String resourceName(View view) {
 +        int id = view.getId(); if (id == View.NO_ID) return "";
@@ -4554,7 +4568,7 @@ diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
-@@ -0,0 +1,151 @@
+@@ -0,0 +1,169 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -4704,6 +4718,24 @@ new file mode 100644
 +        assertEquals(View.VISIBLE, parent.getVisibility());
 +        assertEquals(View.VISIBLE, parent.getChildAt(1).getVisibility());
 +        assertEquals(View.INVISIBLE, parent.getChildAt(0).getVisibility());
++    }
++    @Test public void observedInternalSideNavigationHidesAndRestoresWithoutMovingThePager() {
++        viewer.layout(80,0,1000,1400);
++        FrameLayout nav=new FrameLayout(activity);nav.setTag("ls_vertical_nav_bar_stub");
++        add(content,nav,0,0,80,1600);add(nav,new View(activity),0,200,80,60);
++        chrome.discover(viewer,content,true,true);assertTrue(chrome.frame());
++        assertEquals(View.INVISIBLE,nav.getVisibility());assertEquals(80,viewer.getLeft());
++        chrome.discover(viewer,content,false,true);assertFalse(chrome.frame());
++        assertEquals(View.VISIBLE,nav.getVisibility());assertEquals(80,viewer.getLeft());
++    }
++    @Test public void unrelatedTallColumnAndMisplacedNavigationKeepTheirNativeVisibility() {
++        viewer.layout(80,0,1000,1400);
++        FrameLayout other=new FrameLayout(activity);other.setTag("unknown_navigation");
++        add(content,other,0,0,80,1600);add(other,new View(activity),0,200,80,60);
++        FrameLayout misplaced=new FrameLayout(activity);misplaced.setTag("ls_vertical_nav_bar_stub");
++        add(content,misplaced,800,0,80,1600);add(misplaced,new View(activity),0,200,80,60);
++        chrome.discover(viewer,content,true,true);assertFalse(chrome.frame());
++        assertEquals(View.VISIBLE,other.getVisibility());assertEquals(View.VISIBLE,misplaced.getVisibility());
 +    }
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsScrimTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsScrimTest.java
@@ -6715,7 +6747,7 @@ diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgress.java
-@@ -0,0 +1,128 @@
+@@ -0,0 +1,135 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -6740,6 +6772,7 @@ new file mode 100644
 +    private final Matrix matrix = new Matrix();
 +    private final RectF box = new RectF(), anchor = new RectF();
 +    private int generation, nodes;
++    private float metadataBottom = Float.NaN;
 +    private HitSurface hit;
 +    void discover(FoldReelsRenderer renderer, View viewer, FoldReelsControls controls) {
 +        generation++; nodes = 0;
@@ -6766,6 +6799,7 @@ new file mode 100644
 +    }
 +    void frame(View viewer, RectF viewport, View boundary, FrameLayout host, boolean enabled,
 +               FoldReelsControls controls, FoldReelsClipping clipping) {
++        metadataBottom = Float.NaN;
 +        View selected = null;
 +        float density = viewer.getResources().getDisplayMetrics().density;
 +        float margin = 8*density;
@@ -6799,6 +6833,7 @@ new file mode 100644
 +        }
 +        hit.viewer=new WeakReference<>(viewer); hit.scrubber=new WeakReference<>(selected); hit.controls=controls;
 +        FoldReelsViews.bounds(selected,box,matrix); FoldReelsViews.bounds(host,anchor,matrix);
++        metadataBottom = box.top - 8*density;
 +        int height=Math.max(selected.getHeight(),Math.round(48*density));
 +        FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)hit.getLayoutParams();
 +        int left=Math.round(box.left-anchor.left), top=Math.round(box.centerY()-anchor.top-height/2f), width=Math.round(box.width());
@@ -6808,7 +6843,11 @@ new file mode 100644
 +    }
 +    void restore(FoldReelsControls controls) {
 +        for(Map.Entry<View,State> e:states.entrySet()) { e.getValue().restore(e.getKey());controls.progressTarget(e.getKey(),false); }
-+        states.clear(); removeHit();
++        states.clear(); metadataBottom = Float.NaN; removeHit();
++    }
++    void constrainMetadata(RectF interactive) {
++        if (Float.isFinite(metadataBottom) && metadataBottom > interactive.top)
++            interactive.bottom = Math.min(interactive.bottom, metadataBottom);
 +    }
 +    private void removeHit() { if(hit!=null && hit.getParent() instanceof ViewGroup)((ViewGroup)hit.getParent()).removeView(hit);hit=null; }
 +    private static final class State {
@@ -6848,7 +6887,7 @@ diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgressTest.java
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,67 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.RectF;
@@ -6904,6 +6943,17 @@ new file mode 100644
 +    @Test public void landscapeResizeRepositionsWithoutChangingNativePlaybackOrProgress(){setupBar();scrubber.setProgress(42);apply(true);
 +        RectF wide=new RectF(0,0,1600,1000);clipping.beginFrame();progress.frame(viewer,wide,content,content,true,controls,clipping);clipping.endFrame();
 +        assertEquals(1592,bounds(scrubber).right,.01f);assertEquals(992,bounds(scrubber).bottom,.01f);assertEquals(42,scrubber.getProgress());}
++    @Test public void compactCaptionStaysAboveTheNativeSeekBarAndRestoresInNativeMode(){
++        setupBar();android.widget.TextView caption=new android.widget.TextView(activity);
++        caption.setTag("clips_caption_text");caption.setText("Regression caption");add(pages.get(1),caption,106,1300,788,40);
++        FoldReelsMetadata metadata=new FoldReelsMetadata(FoldReelsTestFixture::name);
++        metadata.discover(renderer,viewer,controls);RectF original=bounds(caption);apply(true);
++        RectF area=fullViewport();progress.constrainMetadata(area);
++        clipping.beginFrame();metadata.frame(viewer,fullViewport(),area,FoldReelsMetadata.Mode.COMPACT,controls,clipping);clipping.endFrame();
++        assertTrue(bounds(caption).bottom<bounds(scrubber).top);
++        apply(false);area.set(fullViewport());progress.constrainMetadata(area);assertEquals(fullViewport(),area);
++        metadata.frame(viewer,fullViewport(),area,FoldReelsMetadata.Mode.FULL,controls,clipping);assertEquals(original,bounds(caption));metadata.restore(controls);
++    }
 +}
 diff --git a/extensions/instagram/src/test/java/com/instagram/ui/mediaactions/VideoScrubberSeekBar.java b/extensions/instagram/src/test/java/com/instagram/ui/mediaactions/VideoScrubberSeekBar.java
 new file mode 100644
