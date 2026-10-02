@@ -16,7 +16,7 @@ $morphe = Join-Path $root '.work/morphe-1.14.0-dev.1.jar'
 $buildTools = Join-Path $root '.work/android-sdk/build-tools/35.0.0'
 $zipalign = Join-Path $buildTools 'zipalign.exe'
 $aapt = Join-Path $buildTools 'aapt.exe'
-$apksigner = Join-Path $buildTools 'apksigner.bat'
+$apksigner = Join-Path $buildTools 'lib/apksigner.jar'
 $canonicalizer = Join-Path $root 'diagnostics/canonicalize_apk.py'
 $verifyClass = Join-Path $root '.work/VerifyFoldDex.class'
 $verifyJar = Join-Path $root '.work/morphe-verify.jar'
@@ -48,8 +48,7 @@ $rawApk = Join-Path $work 'patched-raw.apk'
 $canonicalApk = Join-Path $work 'patched-canonical-unsigned.apk'
 $resultPath = Join-Path $work 'morphe-result.json'
 $patchLog = Join-Path $work 'morphe.log'
-$dexDir = Join-Path $work 'generated-dex'
-$keyStore = Join-Path $work 'local-test-only.jks'
+$keyStore = Join-Path $root '.work/lab-signing/test-only.jks'
 $reportPath = Join-Path $work 'canonicalize-report.json'
 
 function Invoke-Checked([string]$File, [string[]]$Arguments, [string]$Label) {
@@ -65,18 +64,18 @@ Invoke-Checked $java @('-jar', $morphe, 'options-create', '-p', $mppPath, '-f', 
 $options = Get-Content -LiteralPath $optionsPath -Raw | ConvertFrom-Json
 if ($options.Count -ne 1) { throw 'Expected exactly one options bundle for the candidate MPP.' }
 $patchMap = $options[0].patches
-if ($patchMap.Count -ne 60) { throw "Expected 60 patches in candidate MPP; found $($patchMap.Count)." }
+if (@($patchMap.PSObject.Properties).Count -ne 60) { throw "Expected 60 patches in candidate MPP; found $(@($patchMap.PSObject.Properties).Count)." }
 foreach ($name in @('Adaptive Fold Reels', 'Clone')) {
     if (!$patchMap.PSObject.Properties[$name]) { throw "Required patch absent from candidate MPP: $name" }
 }
 foreach ($name in $patchMap.PSObject.Properties.Name) { $patchMap.$name.enabled = $true }
 $patchMap.Clone.options.packageName = 'com.instagram.android.patchinstalab'
 $patchMap.Clone.options.appName = 'PatchInsta Lab'
-$options | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $optionsPath -Encoding utf8
+ConvertTo-Json -InputObject @($options) -Depth 30 | Set-Content -LiteralPath $optionsPath -Encoding utf8
 
 # Do not pass -i/--install. Morphe merges the local APKM and produces a local APK.
 $morpheArgs = @('-jar', $morphe, 'patch', $apkmPath, '-p', $mppPath,
-    '--options-file', $optionsPath, '--unsigned', '-o', $rawApk,
+    '--options-file', $optionsPath, '--unsigned', '--disable-purge', '-o', $rawApk,
     '-r', $resultPath, '-t', (Join-Path $work 'morphe-temp'))
 $patchOutput = & $java @morpheArgs 2>&1
 $patchExit = $LASTEXITCODE
@@ -96,45 +95,54 @@ if (($clone.options | Where-Object key -eq 'packageName' | Select-Object -Expand
     throw 'Clone packageName did not match the required isolated package.'
 }
 
-# The CLI reports its merged source APK in the local output. Use that merged
-# artifact for canonical DEX/native comparisons; never reconstruct from guessed splits.
-$mergedApk = $null
-foreach ($line in $patchOutput) {
-    if ([string]$line -match 'Saved to:\s*(.+-merged\.apk)\s*$') { $mergedApk = $Matches[1].Trim() }
+# APKM's base.apk is the immutable original for DEX and native-library comparisons.
+# Reject code or native libraries in split APKs, since those would make base.apk
+# an incomplete source for this strict check.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$mergedApk = Join-Path $work 'source-base.apk'
+$archive = [IO.Compression.ZipFile]::OpenRead($apkmPath)
+try {
+    $baseEntry = $archive.Entries | Where-Object FullName -CEQ 'base.apk' | Select-Object -First 1
+    if (!$baseEntry) { throw 'APKM has no base.apk entry.' }
+    $splitIndex = 0
+    foreach ($split in @($archive.Entries | Where-Object { $_.FullName -match '\.apk$' -and $_.FullName -cne 'base.apk' })) {
+        $splitIndex++
+        $splitPath = Join-Path $work "split-check-$splitIndex.apk"
+        [IO.Compression.ZipFileExtensions]::ExtractToFile($split, $splitPath)
+        $splitZip = [IO.Compression.ZipFile]::OpenRead($splitPath)
+        try {
+            $codeOrLibrary = $splitZip.Entries | Where-Object { $_.FullName -match '^classes(?:[2-9]|[1-9][0-9]+)?\.dex$|^lib/.+\.so$' } | Select-Object -First 1
+            if ($codeOrLibrary) { throw "APKM split contains code or native library: $($split.FullName) / $($codeOrLibrary.FullName)" }
+        } finally { $splitZip.Dispose() }
+    }
+    [IO.Compression.ZipFileExtensions]::ExtractToFile($baseEntry, $mergedApk)
 }
-if (!$mergedApk) { throw "Could not identify Morphe's merged local APK from its output; see $patchLog" }
-if (!(Test-Path -LiteralPath $mergedApk -PathType Leaf)) { throw "Morphe merged APK is unavailable: $mergedApk" }
-
+finally { $archive.Dispose() }
 $badging = Invoke-Checked $aapt @('dump', 'badging', $rawApk) 'aapt badging'
 if (($badging -join "`n") -notmatch "package: name='com\.instagram\.android\.patchinstalab'") {
     throw 'Patched APK manifest package is not the isolated lab package.'
 }
 
-New-Item -ItemType Directory -Path $dexDir | Out-Null
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$zip = [IO.Compression.ZipFile]::OpenRead($rawApk)
-try {
-    $dexEntries = @($zip.Entries | Where-Object { $_.FullName -match '^classes(?:[2-9]|[1-9][0-9]+)?\.dex$' })
-    if ($dexEntries.Count -lt 1) { throw 'Patched APK has no DEX entries.' }
-    foreach ($entry in $dexEntries) {
-        $dest = Join-Path $dexDir $entry.Name
-        [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $dest)
-    }
-}
-finally { $zip.Dispose() }
+# Compare against Morphe's actual generated DEX, never a copy extracted from the APK.
+$generatedDirs = @(Get-ChildItem (Join-Path $work 'morphe-temp') -Directory -Recurse | Where-Object { $_.FullName -match '[\\/]patched[\\/]dex$' })
+if ($generatedDirs.Count -ne 1) { throw 'Expected one authoritative generated DEX directory.' }
+$dexDir = $generatedDirs[0].FullName
 
 Invoke-Checked $PythonExe @($canonicalizer, $mergedApk, $rawApk, $dexDir, $canonicalApk, $zipalign, $reportPath) 'APK canonicalization' | Out-Null
 Invoke-Checked $java @('-cp', "$verifyJar;$root/.work", 'VerifyFoldDex', $mergedApk, $canonicalApk) 'Fold DEX static verification' | Out-Null
 
-# A fresh, local test-only certificate is generated inside this ignored work dir.
+# Reuse the local lab certificate so future test APKs can update this isolated clone.
+if (!(Test-Path -LiteralPath $keyStore)) {
+New-Item -ItemType Directory -Force -Path (Split-Path $keyStore -Parent) | Out-Null
 Invoke-Checked $keytool @('-genkeypair', '-noprompt', '-keystore', $keyStore, '-storetype', 'JKS',
     '-storepass', 'changeit', '-keypass', 'changeit', '-alias', 'patchinsta-test',
     '-keyalg', 'RSA', '-keysize', '2048', '-validity', '3650', '-dname', 'CN=PatchInsta Local Test') 'Test-key generation' | Out-Null
-Invoke-Checked $apksigner @('sign', '--ks', $keyStore, '--ks-key-alias', 'patchinsta-test',
+}
+Invoke-Checked $java @('-jar', $apksigner, 'sign', '--ks', $keyStore, '--ks-key-alias', 'patchinsta-test',
     '--ks-pass', 'pass:changeit', '--key-pass', 'pass:changeit', '--v1-signing-enabled', 'true',
     '--v2-signing-enabled', 'true', '--v3-signing-enabled', 'true', '--v4-signing-enabled', 'false',
     '--out', $outputPath, $canonicalApk) 'APK signing' | Out-Null
-Invoke-Checked $apksigner @('verify', '--verbose', $outputPath) 'APK signature verification' | Out-Null
+Invoke-Checked $java @('-jar', $apksigner, 'verify', '--verbose', $outputPath) 'APK signature verification' | Out-Null
 Invoke-Checked $zipalign @('-c', '-P', '16', '4', $outputPath) 'Final APK alignment verification' | Out-Null
 $finalBadging = Invoke-Checked $aapt @('dump', 'badging', $outputPath) 'Final aapt badging'
 if (($finalBadging -join "`n") -notmatch "package: name='com\.instagram\.android\.patchinstalab'") { throw 'Final APK package identity changed after signing.' }
@@ -142,6 +150,5 @@ if (($finalBadging -join "`n") -notmatch "package: name='com\.instagram\.android
 $sha = (Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash.ToLowerInvariant()
 Write-Output "Built local test APK: $outputPath"
 Write-Output "SHA-256: $sha"
-Write-Output "Build evidence and local test-only signing key: $work"
+Write-Output "Build evidence: $work; persistent local lab signing key: $keyStore"
 Write-Output 'No device installation was performed. The APK is signed with a locally generated test key.'
-

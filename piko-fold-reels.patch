@@ -1871,10 +1871,10 @@ new file mode 100644
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsMetadata.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsMetadata.java
 new file mode 100644
-index 0000000..9da5803
+index 0000000..9a9d6c1
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsMetadata.java
-@@ -0,0 +1,403 @@
+@@ -0,0 +1,442 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2089,7 +2089,7 @@ index 0000000..9da5803
 +            }
 +            for (Map.Entry<View, State> other : states.entrySet())
 +                if (other.getValue().caption && other.getValue().page.get() == page)
-+                    bottom -= Math.min(other.getKey().getHeight(), mountedCaptionHeight(other.getKey())) + inset * .5f;
++                    bottom -= captionSpace(other.getKey()) + inset * .5f;
 +        }
 +        s.ax = s.x + root.left + inset - box.left;
 +        s.ay = s.y + bottom - height - box.top;
@@ -2100,11 +2100,50 @@ index 0000000..9da5803
 +        controls.metadataTarget(v, s.targets, true);
 +    }
 +    private static int mountedCaptionHeight(View v) {
-+        // One native line including leading/padding; no invented ellipsis or text copy.
-+        // The 32 dp clip showed part of line two on the Fold. Reserve the
-+        // native scroll padding plus one conservative 16 dp text line.
-+        int firstLine = Math.round(20 * v.getResources().getDisplayMetrics().scaledDensity);
-+        return firstLine > 0 && v.getHeight() >= firstLine ? firstLine : 0;
++        // Measure the existing Layout. Do not guess a dp height or read account text.
++        ArrayList<View> children = new ArrayList<>(); Identity.collect(v, children, 0);
++        RectF caption = new RectF(), host = new RectF(); Matrix transform = new Matrix();
++        FoldReelsViews.bounds(v, caption, transform);
++        float found = Float.NaN;
++        for (View child : children) {
++            if (!FoldReelsViews.unitParents(child, v)) return 0;
++            float localBottom = Float.NaN;
++            if (child instanceof TextView) {
++                android.text.Layout layout = ((TextView) child).getLayout();
++                if (layout != null && layout.getLineCount() > 0)
++                    localBottom = ((TextView) child).getTotalPaddingTop() - child.getScrollY() + layout.getLineBottom(0);
++            } else if (FoldReelsViews.classIs(child, "com.facebook.litho.ComponentHost")) {
++                try {
++                    Object mounted = child.getClass().getMethod("getDrawables").invoke(child);
++                    if (!(mounted instanceof java.util.List)) return 0;
++                    for (Object item : (java.util.List<?>) mounted) {
++                        if (!(item instanceof android.graphics.drawable.Drawable)
++                                || !"X.07kE".equals(item.getClass().getName())) continue;
++                        if (Float.isFinite(localBottom)) return 0;
++                        localBottom = nativeCaptionLineBottom((android.graphics.drawable.Drawable) item);
++                    }
++                } catch (ReflectiveOperationException | RuntimeException ignored) { return 0; }
++            }
++            if (!Float.isFinite(localBottom)) continue;
++            if (Float.isFinite(found)) return 0; // Ambiguous mounted text stays native.
++            FoldReelsViews.bounds(child, host, transform);
++            found = host.top - caption.top + localBottom;
++        }
++        return Float.isFinite(found) && found > 0 && found <= v.getHeight() ? (int) Math.ceil(found) : 0;
++    }
++    private static int captionSpace(View v) { int measured = mountedCaptionHeight(v); return measured > 0 ? measured : v.getHeight(); }
++    static float nativeCaptionLineBottom(android.graphics.drawable.Drawable drawable) {
++        // Instagram 439 TextDrawable.draw translates by bounds.top + A01 then draws A0B.
++        // Both fields are public in the pinned APK. Layout access never calls getText().
++        try {
++            java.lang.reflect.Field layoutField = drawable.getClass().getField("A0B");
++            java.lang.reflect.Field offsetField = drawable.getClass().getField("A01");
++            if (layoutField.getType() != android.text.Layout.class || offsetField.getType() != float.class) return Float.NaN;
++            android.text.Layout layout = (android.text.Layout) layoutField.get(drawable);
++            float offset = offsetField.getFloat(drawable);
++            if (layout == null || layout.getLineCount() == 0 || !Float.isFinite(offset)) return Float.NaN;
++            return drawable.getBounds().top + offset + layout.getLineBottom(0);
++        } catch (ReflectiveOperationException | RuntimeException ignored) { return Float.NaN; }
 +    }
 +    private static int lineHeight(View view) {
 +        return view instanceof TextView ? ((TextView) view).getLineHeight()
@@ -3845,9 +3884,10 @@ index 0000000..a560c8a
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java
 new file mode 100644
+index 0000000..08ce091
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,164 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Canvas;
@@ -3875,7 +3915,7 @@ new file mode 100644
 +public class FoldReelsLithoTest extends FoldReelsTestFixture {
 +    final FoldReelsMetadata metadata=new FoldReelsMetadata(FoldReelsTestFixture::name);
 +    FrameLayout info,row,author,username,caption;
-+    View follow,avatar;
++    View follow,avatar; TextView captionText;
 +    void mounted(int page) {
 +        FrameLayout ancestor=pages.get(page);
 +        for(int i=0;i<7;i++) {FrameLayout next=new FrameLayout(activity);add(ancestor,next,0,0,1000,1400);ancestor=next;}
@@ -3890,7 +3930,10 @@ new file mode 100644
 +        caption=new FrameLayout(activity);caption.setTag("clips_caption_component");add(nested,caption,0,157,735,141);
 +        FrameLayout scroll=new FrameLayout(activity);add(caption,scroll,0,11,735,130);
 +        FrameLayout textHost=new FrameLayout(activity);textHost.setClickable(true);add(scroll,textHost,0,0,735,130);
++        captionText=new TextView(activity);captionText.setText("First complete line\nSecond hidden line");captionText.setTextSize(16);
++        add(textHost,captionText,0,17,735,113);measureCaptionText();
 +    }
++    void measureCaptionText(){captionText.measure(View.MeasureSpec.makeMeasureSpec(735,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(113,View.MeasureSpec.AT_MOST));captionText.layout(0,17,735,17+captionText.getMeasuredHeight());}
 +    void discover(){renderer.discover(viewer);controls.discover(viewer);metadata.discover(renderer,viewer,controls);}
 +    void mode(FoldReelsMetadata.Mode mode){clipping.beginFrame();metadata.frame(viewer,bounds(viewer),mode,controls,clipping);clipping.endFrame();}
 +    String report(){StringBuilder out=new StringBuilder();metadata.diagnostics(out);return out.toString();}
@@ -3901,7 +3944,7 @@ new file mode 100644
 +        assertEquals(0,follow.getTranslationX(),.01f);assertTrue(follow.isShown());
 +        assertEquals(735,row.getLayoutParams().width);assertEquals(157,row.getLayoutParams().height);
 +        assertEquals(735,caption.getLayoutParams().width);assertEquals(141,caption.getLayoutParams().height);
-+        assertEquals(Math.min(20,caption.getHeight()),caption.getClipBounds().height());
++        assertEquals(11+17+captionText.getLayout().getLineBottom(0),caption.getClipBounds().height());
 +    }
 +    @Test public void mountedRowsKeepNativeAuthorFollowAndCaptionTouch() {
 +        mounted(1);AtomicInteger hits=new AtomicInteger();author.setOnClickListener(v->hits.incrementAndGet());follow.setOnClickListener(v->hits.incrementAndGet());
@@ -3913,7 +3956,7 @@ new file mode 100644
 +            assertEquals("role="+name(v)+" bounds="+bounds(v)+" row="+bounds(row),++expected,hits.get());
 +        }
 +        RectF c=bounds(caption); RectF root=bounds(viewer); c.offset(-root.left,-root.top);
-+        int lineY=Math.min(caption.getClipBounds().height()-1,15);
++        int lineY=caption.getClipBounds().height()-1;
 +        send(MotionEvent.ACTION_DOWN,c.left+20,c.top+lineY);send(MotionEvent.ACTION_UP,c.left+20,c.top+lineY);
 +        assertEquals("caption="+bounds(caption)+" clip="+caption.getClipBounds()+" text="+bounds(text),3,hits.get());
 +    }
@@ -3928,6 +3971,28 @@ new file mode 100644
 +        mounted(1);discover();mode(FoldReelsMetadata.Mode.COMPACT);mode(FoldReelsMetadata.Mode.FULL);
 +        assertEquals(0,row.getTranslationX(),.01f);assertEquals(0,caption.getTranslationY(),.01f);assertNull(caption.getClipBounds());
 +        assertEquals(735,row.getLayoutParams().width);assertEquals(63,username.getTop());assertEquals(23,follow.getTop());
++    }
++    @Test public void largerCaptionFontKeepsItsWholeFirstLineAndClipsBeforeLineTwo() {
++        mounted(1);captionText.setTextSize(28);measureCaptionText();discover();mode(FoldReelsMetadata.Mode.COMPACT);
++        assertEquals(28+captionText.getLayout().getLineBottom(0),caption.getClipBounds().bottom);
++        assertTrue(caption.getClipBounds().bottom < 28+captionText.getLayout().getLineBottom(1));
++    }
++    @Test public void unresolvedCaptionGeometryKeepsNativeLayoutInsteadOfGuessingALine() {
++        mounted(1);((FrameLayout)captionText.getParent()).removeView(captionText);discover();mode(FoldReelsMetadata.Mode.COMPACT);
++        assertNull(caption.getClipBounds());assertEquals(0,caption.getTranslationY(),.01f);
++        assertTrue(report(),report().contains("native-caption-line-unresolved"));
++    }
++    public static final class NativeCaption extends Drawable {
++        public android.text.Layout A0B; public float A01;
++        @Override public void draw(Canvas canvas){} @Override public void setAlpha(int value){}
++        @Override public void setColorFilter(ColorFilter value){} @Override public int getOpacity(){return -3;}
++    }
++    @Test public void pinnedTextDrawableGeometryIncludesItsBoundsAndDrawTranslation() {
++        android.text.TextPaint paint=new android.text.TextPaint();paint.setTextSize(24);
++        NativeCaption drawable=new NativeCaption();drawable.A0B=android.text.StaticLayout.Builder.obtain("one\ntwo",0,7,paint,300).build();
++        drawable.setBounds(0,17,300,130);drawable.A01=2.5f;
++        assertEquals(19.5f+drawable.A0B.getLineBottom(0),FoldReelsMetadata.nativeCaptionLineBottom(drawable),.01f);
++        drawable.A01=Float.NaN;assertTrue(Float.isNaN(FoldReelsMetadata.nativeCaptionLineBottom(drawable)));
 +    }
 +    @Test public void mountedDetachRestoresClipAndTranslationsImmediately() {
 +        mounted(1);discover();mode(FoldReelsMetadata.Mode.COMPACT);((FrameLayout)caption.getParent()).removeView(caption);
@@ -6551,4 +6616,3 @@ index 00000000..f79c0415
 +        assertEquals(1,gradient.getAlpha(),0);assertNull(gradient.getClipBounds());
 +    }
 +}
-
