@@ -105,7 +105,7 @@ diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
-@@ -0,0 +1,619 @@
+@@ -0,0 +1,636 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -313,6 +313,8 @@ new file mode 100644
 +    }
 +    private static void showAdvanced(Activity owner) {
 +        LinearLayout box = box(owner);
++        addButton(box, str("piko_fold_reels_default_cover"), () -> showDefaultPreset(owner, false));
++        addButton(box, str("piko_fold_reels_default_inner"), () -> showDefaultPreset(owner, true));
 +        addButton(box, str("piko_fold_reels_profile"), () -> showProfileOptions(owner));
 +        addButton(box, str("piko_fold_reels_diagnostic"), () -> showDiagnostic(owner));
 +        choose(box, "piko_fold_reels_native_policy", "fold_reels_native_policy", new String[]{"v4", "no_two_pane"},
@@ -320,6 +322,17 @@ new file mode 100644
 +        TextView hint = new TextView(owner); hint.setText(str("piko_fold_reels_policy_hint")); box.addView(hint);
 +        addButton(box, str("piko_fold_reels_refresh_now"), () -> confirmRefresh(owner));
 +        showBox(owner, box, wide());
++    }
++    private static void showDefaultPreset(Activity owner, boolean inner) {
++        FoldReelsPreferences.Profile saved = prefs.readSaved(inner);
++        boolean nativePreset = !saved.crop && !saved.immersive && !saved.tabs && !saved.card
++                && saved.actions == FoldReelsControls.Actions.ALL && saved.metadata == FoldReelsMetadata.Mode.FULL;
++        int selected = prefs.savedClean(inner) ? 0 : nativePreset ? 1 : -1;
++        new AlertDialog.Builder(owner, AlertDialog.THEME_DEVICE_DEFAULT_DARK)
++                .setTitle(str(inner ? "piko_fold_reels_default_inner" : "piko_fold_reels_default_cover"))
++                .setSingleChoiceItems(new String[]{str("piko_fold_reels_preset_clean"), str("piko_fold_reels_preset_native")}, selected,
++                        (dialog, which) -> { prefs.preset(inner, which == 0); watcher.requestFrame(); dialog.dismiss(); })
++                .setNegativeButton(android.R.string.cancel, null).show();
 +    }
 +    private static LinearLayout box(Activity owner) {
 +        LinearLayout box = new LinearLayout(owner); box.setOrientation(LinearLayout.VERTICAL);
@@ -552,7 +565,11 @@ new file mode 100644
 +                if (override.equals("cover")) next = FoldReelsPolicy.WindowKind.COMPACT;
 +                if (override.equals("inner")) next = FoldReelsPolicy.WindowKind.WIDE;
 +                if (next != windowKind) { windowKind = next; markDiscovery(); }
-+                if (foreground.get() == a || a.hasWindowFocus()) kind = next;
++                if (foreground.get() == a || a.hasWindowFocus()) {
++                    if (prefs != null && next != FoldReelsPolicy.WindowKind.UNKNOWN)
++                        prefs.activateScreen(next == FoldReelsPolicy.WindowKind.WIDE);
++                    kind = next;
++                }
 +            }
 +            boolean presentable(View viewer) {
 +                Activity a = owner.get();
@@ -668,7 +685,7 @@ new file mode 100644
 +                    // Listeners close over the weak-owner tracker, not the Activity.
 +                    button.setOnClickListener(v -> {
 +                        boolean inner = windowKind == FoldReelsPolicy.WindowKind.WIDE;
-+                        prefs.preset(inner, !prefs.clean(inner)); watcher.requestFrame();
++                        prefs.temporaryPreset(inner, !prefs.clean(inner)); watcher.requestFrame();
 +                    });
 +                    button.setOnLongClickListener(v -> { Activity owner = this.owner.get(); if (owner != null) showLayoutOptions(owner); return true; });
 +                    FoldReelsFullscreenIcon icon = new FoldReelsFullscreenIcon(dp(a, 24));
@@ -2686,7 +2703,7 @@ diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPreferences.java
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,108 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2700,6 +2717,7 @@ new file mode 100644
 +    static final String HEADER = "fold_reels_cover_hide_header";
 +    static final String LEGACY_MINIMAL = "fold_reels_cover_minimal_v3", LEGACY_EDGES = "fold_reels_edge_controls_v4";
 +    final SharedPreferences storage;
++    private Boolean temporaryCover, temporaryInner, activeInner;
 +    FoldReelsPreferences(Context context) {
 +        storage = context.getApplicationContext().getSharedPreferences("piko_settings", Context.MODE_PRIVATE);
 +        // Migrate an explicitly saved v3 choice once. An absent legacy boolean uses the new clean default.
@@ -2714,13 +2732,25 @@ new file mode 100644
 +    boolean enabled() { return bool("adaptive_fold_reels", true); }
 +    boolean bool(String key, boolean fallback) { try { return storage.getBoolean(key, fallback); } catch (ClassCastException e) { return fallback; } }
 +    String string(String key, String fallback) { try { return storage.getString(key, fallback); } catch (ClassCastException e) { return fallback; } }
-+    void put(String key, String value) { storage.edit().putString(key, value).apply(); }
-+    void put(String key, boolean value) { storage.edit().putBoolean(key, value).apply(); }
++    private void clearTemporaryForKey(String key) {
++        if (key.startsWith("fold_reels_inner_")) temporaryInner = null;
++        if (key.startsWith("fold_reels_cover_")) temporaryCover = null;
++    }
++    void put(String key, String value) { clearTemporaryForKey(key); storage.edit().putString(key, value).apply(); }
++    void put(String key, boolean value) { clearTemporaryForKey(key); storage.edit().putBoolean(key, value).apply(); }
 +    void crop(boolean inner, boolean value) {
++        clearTemporaryForKey(key(inner, "crop"));
 +        storage.edit().putBoolean(inner ? INNER_CROP : COVER_CROP, value)
 +                .putString(key(inner, "zoom_v3"), "1").apply();
 +    }
 +    Profile read(boolean inner) {
++        Boolean temporary = inner ? temporaryInner : temporaryCover;
++        if (temporary != null) return new Profile(temporary, 1, temporary, temporary, temporary,
++                temporary ? FoldReelsControls.Actions.COMMENT_ONLY : FoldReelsControls.Actions.ALL,
++                temporary ? FoldReelsMetadata.Mode.COMPACT : FoldReelsMetadata.Mode.FULL, temporary, true);
++        return readSaved(inner);
++    }
++    Profile readSaved(boolean inner) {
 +        float zoom = 1;
 +        try { zoom = Float.parseFloat(string(key(inner, "zoom_v3"), "1")); } catch (NumberFormatException ignored) {}
 +        if (!Float.isFinite(zoom)) zoom = 1;
@@ -2732,6 +2762,11 @@ new file mode 100644
 +                bool(key(inner, "card"), !inner), bool(key(inner, "shortcut"), true));
 +    }
 +    boolean hideHeader(boolean inner) {
++        Boolean temporary = inner ? temporaryInner : temporaryCover;
++        if (temporary != null) return temporary;
++        return savedHideHeader(inner);
++    }
++    private boolean savedHideHeader(boolean inner) {
 +        return bool(headerKey(inner), bool(tabsKey(inner), !inner) && bool(key(inner, "card"), !inner)
 +                && string(key(inner, "metadata"), inner ? "FULL" : "COMPACT").equals("COMPACT"));
 +    }
@@ -2739,6 +2774,7 @@ new file mode 100644
 +        preset(false, clean);
 +    }
 +    void preset(boolean inner, boolean clean) {
++        clearTemporaryForKey(key(inner, "crop"));
 +        storage.edit().putBoolean(inner ? INNER_CROP : COVER_CROP, clean).putString(key(inner, "zoom_v3"), "1")
 +                .putBoolean(immersiveKey(inner), clean).putBoolean(tabsKey(inner), clean).putBoolean(headerKey(inner), clean)
 +                .putBoolean(key(inner, "edges"), clean).putString(key(inner, "actions"), clean ? "COMMENT_ONLY" : "ALL")
@@ -2749,6 +2785,18 @@ new file mode 100644
 +        Profile p = read(inner);
 +        return p.crop && p.immersive && p.tabs && p.edges && p.card && hideHeader(inner)
 +                && p.actions == FoldReelsControls.Actions.COMMENT_ONLY && p.metadata == FoldReelsMetadata.Mode.COMPACT;
++    }
++    boolean savedClean(boolean inner) {
++        Profile p = readSaved(inner);
++        return p.crop && p.immersive && p.tabs && p.edges && p.card && savedHideHeader(inner)
++                && p.actions == FoldReelsControls.Actions.COMMENT_ONLY && p.metadata == FoldReelsMetadata.Mode.COMPACT;
++    }
++    void temporaryPreset(boolean inner, boolean clean) {
++        if (inner) temporaryInner = clean; else temporaryCover = clean;
++    }
++    void activateScreen(boolean inner) {
++        if (activeInner != null && activeInner != inner) temporaryCover = temporaryInner = null;
++        activeInner = inner;
 +    }
 +    private static <T extends Enum<T>> T choice(Class<T> type, String value, T fallback) {
 +        try { return Enum.valueOf(type, value); } catch (IllegalArgumentException | NullPointerException e) { return fallback; }
@@ -3740,7 +3788,7 @@ diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java
-@@ -0,0 +1,229 @@
+@@ -0,0 +1,238 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.app.Activity;
@@ -3968,6 +4016,15 @@ new file mode 100644
 +        activity.getResources().updateConfiguration(c,activity.getResources().getDisplayMetrics());t.onPreDraw();assertTrue(FoldReels.prefs.clean(true));assertTrue(video.getScaleX()>1);
 +        c.screenWidthDp=420;c.screenHeightDp=900;activity.getResources().updateConfiguration(c,activity.getResources().getDisplayMetrics());t.onPreDraw();
 +        assertEquals(1,video.getScaleX(),.001f);assertFalse(FoldReels.prefs.read(false).crop);assertEquals(0,activity.recreations);
++    }
++    @Test public void temporaryShortcutToggleReturnsToSavedDefaultAfterScreenRoundTrip() {
++        FoldReels.Watcher.Tracker t=start();t.chip.get().performClick();t.onPreDraw();
++        assertFalse(FoldReels.prefs.read(false).crop);assertTrue(FoldReels.prefs.readSaved(false).crop);
++        Configuration c=new Configuration(activity.getResources().getConfiguration());c.screenWidthDp=768;c.screenHeightDp=1024;
++        activity.getResources().updateConfiguration(c,activity.getResources().getDisplayMetrics());t.onPreDraw();
++        assertFalse(FoldReels.prefs.read(true).crop);assertEquals(1,video.getScaleX(),.001f);
++        c.screenWidthDp=420;c.screenHeightDp=900;activity.getResources().updateConfiguration(c,activity.getResources().getDisplayMetrics());t.onPreDraw();
++        assertTrue(FoldReels.prefs.clean(false));assertTrue(video.getScaleX()>1);assertEquals(0,activity.recreations);
 +    }
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java
@@ -4350,7 +4407,7 @@ diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPreferencesTest.java
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,74 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.content.Context;
@@ -4403,6 +4460,26 @@ new file mode 100644
 +    @Test public void customPartialCropIsNotMistakenForTheCleanPreset() {
 +        FoldReelsPreferences p=new FoldReelsPreferences(context);p.preset(false,false);p.crop(false,true);assertFalse(p.clean(false));
 +        p.preset(false,true);assertTrue(p.clean(false));
++    }
++    @Test public void temporaryToggleNeverWritesOrChangesSavedScreenDefaults() {
++        FoldReelsPreferences p=new FoldReelsPreferences(context);p.activateScreen(false);
++        java.util.Map<String,?> saved=p.storage.getAll();p.temporaryPreset(false,false);
++        assertFalse(p.read(false).crop);assertTrue(p.readSaved(false).crop);assertEquals(saved,p.storage.getAll());
++        assertTrue(new FoldReelsPreferences(context).read(false).crop);
++        p.activateScreen(true);assertFalse(p.read(true).crop);p.activateScreen(false);assertTrue(p.clean(false));
++    }
++    @Test public void explicitDefaultsSurviveReconstructionAndRemainIndependent() {
++        FoldReelsPreferences p=new FoldReelsPreferences(context);p.preset(false,false);p.preset(true,true);
++        FoldReelsPreferences restored=new FoldReelsPreferences(context);
++        assertFalse(restored.read(false).crop);assertTrue(restored.savedClean(true));
++        restored.activateScreen(true);restored.temporaryPreset(true,false);restored.activateScreen(false);restored.activateScreen(true);
++        assertTrue(restored.clean(true));assertFalse(restored.read(false).crop);
++    }
++    @Test public void defaultSelectionCancelsOnlyItsOwnTemporaryToggle() {
++        FoldReelsPreferences p=new FoldReelsPreferences(context);p.temporaryPreset(false,false);p.temporaryPreset(true,true);
++        p.preset(false,true);assertTrue(p.clean(false));assertTrue(p.clean(true));assertFalse(p.readSaved(true).crop);
++        p.put(FoldReelsPreferences.key(true,"metadata"),"HIDDEN");assertFalse(p.read(true).crop);
++        assertEquals(FoldReelsMetadata.Mode.HIDDEN,p.read(true).metadata);
 +    }
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPresentationTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPresentationTest.java
@@ -6000,11 +6077,13 @@ diff --git a/patches/src/main/resources/addresources/values-fr-rFR/instagram/str
 index f49bffd..b4e0b4d 100644
 --- a/patches/src/main/resources/addresources/values-fr-rFR/instagram/strings.xml
 +++ b/patches/src/main/resources/addresources/values-fr-rFR/instagram/strings.xml
-@@ -1,5 +1,60 @@
+@@ -1,5 +1,62 @@
  <?xml version="1.0" encoding="utf-8"?>
  <resources>
 +    <string name="piko_fold_reels_preset_clean">Plein écran propre</string>
 +    <string name="piko_fold_reels_preset_native">Instagram complet</string>
++    <string name="piko_fold_reels_default_cover">Disposition par défaut · écran externe</string>
++    <string name="piko_fold_reels_default_inner">Disposition par défaut · écran interne</string>
 +    <string name="piko_fold_reels_customize">Personnaliser</string>
 +    <string name="piko_fold_reels_advanced">Options avancées</string>
 +    <string name="piko_fold_reels_actions">Actions du Réel</string>
@@ -6065,11 +6144,13 @@ diff --git a/patches/src/main/resources/addresources/values/instagram/strings.xm
 index c76b16f..7e11cb7 100644
 --- a/patches/src/main/resources/addresources/values/instagram/strings.xml
 +++ b/patches/src/main/resources/addresources/values/instagram/strings.xml
-@@ -1,5 +1,60 @@
+@@ -1,5 +1,62 @@
  <?xml version="1.0" encoding="utf-8"?>
  <resources>
 +    <string name="piko_fold_reels_preset_clean">Clean fullscreen</string>
 +    <string name="piko_fold_reels_preset_native">Full Instagram</string>
++    <string name="piko_fold_reels_default_cover">Default layout · external screen</string>
++    <string name="piko_fold_reels_default_inner">Default layout · internal screen</string>
 +    <string name="piko_fold_reels_customize">Customize</string>
 +    <string name="piko_fold_reels_advanced">Advanced options</string>
 +    <string name="piko_fold_reels_actions">Reel actions</string>

@@ -81,7 +81,7 @@ def verify_kit(directory, config):
 
 def test_results(upstream):
     root = upstream / 'extensions/instagram/build/test-results/testReleaseUnitTest'
-    expected = {'FoldReelsRuntimeTest':16, 'FoldReelsLifecycleTest':25, 'FoldReelsPreferencesTest':7,
+    expected = {'FoldReelsRuntimeTest':16, 'FoldReelsLifecycleTest':26, 'FoldReelsPreferencesTest':10,
                 'FoldReelsPresentationTest':23, 'FoldReelsScrimTest':6, 'FoldReelsUpdateTest':15,
                 'FoldReelsViewportTest':16, 'FoldReelsDrawingTest':4, 'FoldReelsNativeDecorationTest':8, 'FoldReelsNativeScrimTest':6, 'FoldReelsLithoTest':18, 'FoldReelsProgressTest':9, 'FoldReelsMountedEvidenceTest':10}
     suites = {}
