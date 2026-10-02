@@ -1,4 +1,4 @@
-# PatchInsta 4.1.9 — installation et utilisation
+# PatchInsta 4.1.10 — installation et utilisation
 
 Bundle non officiel basé sur Piko 3.9.0 au commit `50744aa07bb41c4e1f942a06614ef4e6f2e3610c`. Cible inchangée : Instagram **439.0.0.37.89 / arm64-v8a / 384510827**, à partir de l’**APKM original non patché**.
 
@@ -24,21 +24,21 @@ Patcher l’APKM compatible, puis installer l’APK produit par-dessus le clone 
 
 ## Choisir la présentation
 
-Sur un Réel, toucher le bouton **Entière / Remplir** pour changer le cadrage du Réel courant, sans rafraîchir. Le texte indique l’action proposée. Cette action remet le zoom supplémentaire à 100 %.
+Sur un Réel, toucher l’**icône plein écran** pour basculer temporairement entre les deux presets complets : **Plein écran propre** et **Instagram complet**. Cette bascule ne change pas la disposition par défaut enregistrée ; un changement d’écran ou un nouveau lancement complet reprend le défaut. Le raccourci a une zone tactile de 48 dp ; sa description accessible indique le prochain mode. Aucun texte « Cadrage ? » n’est affiché. Si l’écran ou le lecteur n’est pas reconnu, l’icône reste discrète et le diagnostic explique cette incertitude.
 
 Un **appui long** ouvre **Cadrage Fold**. Le même menu reste accessible par **⋯ → Cadrage Fold** et par les réglages **Piko → Divers**.
 
-Sur l’écran externe :
+Les deux presets sont disponibles **sur les écrans externe et interne**, avec des réglages mémorisés séparément :
 
-- **Plein écran propre** : crop, barres Android et navigation Instagram masquées, commentaire seul, auteur et caption compacts, décor de card reconnu neutralisé, raccourci visible.
+- **Plein écran propre** : recadrage centré proportionnel, barres Android et navigation Instagram masquées, commentaire seul, auteur et légende compacts, décor de card reconnu neutralisé, jauge native proche du bas du viewport et raccourci visible.
 - **Instagram complet** : cadrage natif, navigation et actions visibles, métadonnées complètes, déplacement et nettoyage du décor désactivés.
 - **Personnaliser** : actions Toutes / Commentaire seul / Aucune ; compte et légende complets / compacts / masqués ; déplacement du rail, raccourci, barres et décor indépendants.
 
-Sur l’écran interne, la vidéo entière, les actions et les métadonnées complètes restent le défaut. Son crop, son zoom, ses actions et ses métadonnées ont des réglages indépendants.
+Par défaut, l’écran externe utilise **Plein écran propre** et l’écran interne **Instagram complet**. Dans **Cadrage Fold → Options avancées**, **Disposition par défaut · écran externe** et **Disposition par défaut · écran interne** permettent d’enregistrer un preset indépendamment pour chaque écran. Les boutons de preset du menu principal enregistrent aussi le choix pour l’écran actif. Le pliage applique le défaut de l’écran concerné sans recharger le lecteur ; une rotation sur le même écran conserve la bascule temporaire.
 
-Les anciens choix explicitement enregistrés sont conservés. En particulier, l’ancien mode minimal activé devient **Commentaire seul** ; désactivé explicitement, il devient **Toutes**. Choisir **Plein écran propre** une fois pour appliquer l’ensemble des nouveaux défauts cover.
+Les anciens choix explicitement enregistrés sont conservés. En particulier, l’ancien mode minimal activé devient **Commentaire seul** ; désactivé explicitement, il devient **Toutes**. Les réglages personnalisés restent disponibles et ne sont pas remplacés par les nouveaux défauts lors d’une mise à jour.
 
-Les vues natives de l’avatar, du nom et de Suivre sont réutilisées. La largeur est calculée à partir du rail commentaire, une caption TextView occupe une ligne avec ellipsis. Une caption dessinée par une vue native spécialisée est limitée à une ligne visible, sans copier son texte ; son comportement d’ouverture reste natif. Le bloc reste dans la zone tactile du viewer : si celle-ci ne rejoint pas le bas physique de l’écran, un retrait inférieur peut rester. Le bandeau supérieur partagé reconnu est maintenu dans le viewport pendant les swipes, et le raccourci se place en dessous pour éviter les amis. Les gradients identifiés du haut, du bas et des grandes décorations de card utilisent le repère visuel de la fenêtre en plein écran. Ils gardent leur couche native (background/foreground/image) ; les vues interactives restent dans les limites tactiles du viewer. Les composites de contraste sont adaptés dans leur ensemble, avec des copies privées des drawables. Les décorations non reconnues restent natives.
+Les vues natives de l’avatar, du nom et de Suivre sont réutilisées. La largeur est calculée à partir du rail commentaire, une caption TextView occupe une ligne avec ellipsis. Une caption dessinée par une vue native spécialisée est limitée à une ligne visible, sans copier son texte ; son comportement d’ouverture reste natif. Le bloc auteur reste dans la zone tactile native du viewer. La jauge native reconnue utilise la largeur du viewport et une bande tactile de 48 dp : le glissement horizontal garde le seeking Instagram et le glissement vertical reprend le défilement des Réels. Les feuilles de commentaires natives gardent la priorité. Le bandeau supérieur partagé reconnu est maintenu dans le viewport pendant les swipes, et le raccourci se place en dessous pour éviter les amis. Les gradients identifiés du haut, du bas et des grandes décorations de card utilisent le repère visuel de la fenêtre en plein écran. Ils gardent leur couche native (background/foreground/image) ; les vues interactives restent dans les limites tactiles du viewer. Les composites de contraste sont adaptés dans leur ensemble, avec des copies privées des drawables. Les décorations non reconnues restent natives.
 
 ## Options avancées
 
@@ -46,7 +46,7 @@ Le zoom sert notamment aux bandes intégrées aux pixels de la vidéo. **Détect
 
 **Disposition native** permet un essai isolé « sans two-pane ». Ce choix n’agit qu’au prochain lancement complet manuel, sur les deux écrans, pour éviter des flags incohérents pendant un pliage. La politique v4 demeure le défaut ; l’effet matériel de cette expérience n’est pas validé. Aucun redémarrage n’est déclenché par le réglage.
 
-**Recharger le lecteur…** est un dépannage manuel avec une seconde confirmation. Il peut perdre le Réel courant ; le cadrage normal et le pliage ne l’utilisent jamais. Un balayage depuis le bord peut révéler les barres système temporairement. Les composants restaurent leurs modifications hors du lecteur ou pendant la saisie.
+**Recharger le lecteur…** est un dépannage manuel avec une seconde confirmation. Il peut perdre le Réel courant ; le cadrage normal et le pliage ne l’utilisent jamais. Un balayage depuis le bord peut révéler les barres système temporairement. Les composants restaurent leurs modifications hors du lecteur ou pendant la saisie, puis réappliquent le profil à la réouverture depuis l’accueil ou les MP sans recréer l’activité.
 
 ## Mettre à jour ensuite
 
@@ -76,7 +76,7 @@ GPL-3.0-or-later ; les mentions Piko amont sont conservées. Aucun APK Instagram
 
 ## Diagnostic fiable à partir de 4.1.3
 
-Fermer les dialogues, afficher le défaut sur l’écran concerné, puis faire un appui long sur **Entière / Remplir** → **Options avancées** → **Diagnostic du lecteur** → **Enregistrer .txt**. Choisir un emplacement avec le sélecteur Android et joindre ce fichier complet. Le relevé est figé avant le premier dialogue (`capture=before-layout-menu`), pour éviter que sa perte de focus efface les players. Si un réglage ou l’écran a changé, fermer puis rouvrir les réglages pour un nouveau relevé.
+Fermer les dialogues, afficher le défaut sur l’écran concerné, puis faire un appui long sur l’**icône plein écran** → **Options avancées** → **Diagnostic du lecteur** → **Enregistrer .txt**. Choisir un emplacement avec le sélecteur Android et joindre ce fichier complet. Le relevé est figé avant le premier dialogue (`capture=before-layout-menu`), pour éviter que sa perte de focus efface les players. Si un réglage ou l’écran a changé, fermer puis rouvrir les réglages pour un nouveau relevé.
 
 Le rapport commence par les chemins natifs des players et inclut les drawables montés par Litho lorsque son API publique est disponible. Il ne lit ni caption, ni compte, ni média, ni description d’accessibilité. `drawCalls` / `suppressed` indiquent l’exécution du hook du contour ; `draws` / `lastCanvasClip` documentent le dessin des gradients. Aucun envoi automatique.
 
