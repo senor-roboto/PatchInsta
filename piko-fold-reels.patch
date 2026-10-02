@@ -1261,7 +1261,7 @@ diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
-@@ -0,0 +1,336 @@
+@@ -0,0 +1,343 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1538,6 +1538,13 @@ new file mode 100644
 +    private boolean covers(View view, float x, float y, int depth, int[] count) {
 +        if (++count[0] > 200 || depth > 20) return true;
 +        if (!view.isShown() || view.getAlpha() <= .01f || view instanceof SurfaceView) return false;
++        // An enlarged neighbouring TextureView has bounds beyond its page, but
++        // only its clipped pixels can cover a native control on the current Reel.
++        android.graphics.Rect clip = view.getClipBounds();
++        if (clip != null) {
++            work.set(clip); matrix.reset(); view.transformMatrixToGlobal(matrix); matrix.mapRect(work);
++            if (!work.contains(x, y)) return false;
++        }
 +        FoldReelsViews.bounds(view, work, matrix);
 +        if (!work.contains(x, y)) return false;
 +        boolean painted = view.getBackground() != null;
