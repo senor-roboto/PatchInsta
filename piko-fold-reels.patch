@@ -4243,10 +4243,10 @@ index 00000000..ff5f52dd
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java
 new file mode 100644
-index 00000000..0af544c1
+index 00000000..fcbde390
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLifecycleTest.java
-@@ -0,0 +1,238 @@
+@@ -0,0 +1,242 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.app.Activity;
@@ -4307,9 +4307,11 @@ index 00000000..0af544c1
 +        assertEquals(0,activity.recreations);assertEquals(0,activity.configurations);
 +        activity.focused=true;t.onWindowFocusChanged(true);t.onPreDraw();assertTrue(t.active);assertSame(video,((android.view.ViewGroup)video.getParent()).getChildAt(0));
 +    }
-+    @Test @Config(qualifiers="w768dp-h1024dp-mdpi") public void coldInnerKeepsNativeFramingWithoutConfigurationCallback() {
++    @Test @Config(qualifiers="w768dp-h1024dp-mdpi") public void coldInnerFillsVideoWithNavigationWithoutConfigurationCallback() {
 +        FoldReels.Watcher.Tracker t=start(); assertEquals(FoldReelsPolicy.WindowKind.WIDE,t.windowKind);
-+        assertEquals(1,video.getScaleX(),.001f); assertNotNull(t.chip.get()); assertEquals("piko_fold_reels_preset_clean",t.chip.get().getContentDescription().toString()); assertEquals(0,activity.configurations);
++        assertTrue(video.getScaleX()>1); assertFalse(FoldReels.prefs.read(true).tabs);
++        assertFalse(FoldReels.prefs.read(true).immersive); assertEquals(2,FoldReels.prefs.savedPresetIndex(true));
++        assertNotNull(t.chip.get()); assertEquals("piko_fold_reels_preset_clean",t.chip.get().getContentDescription().toString()); assertEquals(0,activity.configurations);
 +    }
 +    @Test public void contentRootMayArriveAfterTheViewerWithoutASecondAttach() {
 +        activity.contentReady=false; FoldReels.Watcher.Tracker t=start(); assertNull(t.chip.get()); assertTrue(t.active);
@@ -4342,6 +4344,8 @@ index 00000000..0af544c1
 +        assertTrue(next.active); assertEquals(1,next.viewers.size()); assertSame(t,next);assertEquals(2,next.observerInstallations); assertNotNull(next.chip.get());
 +    }
 +    @Test public void foldRoundTripRestoresProfilesWithoutRecreatingPlayerOrShortcut() {
++        // A persisted pre-upgrade native choice must survive the new filled default.
++        activity.getSharedPreferences("piko_settings",0).edit().putBoolean(FoldReelsPreferences.key(true,"crop"),false).commit();
 +        FoldReels.Watcher.Tracker t=start(); TextView chip=t.chip.get();
 +        Configuration config=new Configuration(activity.getResources().getConfiguration()); config.screenWidthDp=768; config.screenHeightDp=1024;
 +        activity.getResources().updateConfiguration(config,activity.getResources().getDisplayMetrics()); t.onPreDraw();
