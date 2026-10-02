@@ -2,11 +2,11 @@
 
 **Adaptive Fold Reels**, dérivé non officiel de Piko, pour les deux écrans du Galaxy Z Fold.
 
-La **4.1.7** corrige les deux échecs de patchage Fold : référence à une classe
-ancêtre et remplacement de méthode MutableClass. Les **60 patches** ont été appliqués
-à l'APKM original Instagram 439 avec Morphe Patcher 1.14.0-dev.1 : APK reconstruit,
-DEX contrôlé et bibliothèques natives conservées. Le lancement et le rendu Fold
-restent à vérifier sur appareil. [Preuves](APK-VALIDATION-4.1.7.json).
+La **4.1.9** cible le cadre Litho identifié dans le diagnostic Fold et mesure la
+première ligne de légende au lieu d'utiliser une hauteur fixe. **141 scénarios Android**
+et **22 contrôles bytecode** passent. Les **60 patches** ont été appliqués au véritable
+APKM Instagram 439 ; l'APK isolé démarre dans l'émulateur. Le rendu des Reels sur le
+Fold reste à confirmer par l'utilisateur. [Preuves](VALIDATION-4.1.9.md).
 
 Cible : **Instagram 439.0.0.37.89**, APKM original, **arm64-v8a / versionCode 384510827**. Aucun APK Instagram n’est distribué.
 

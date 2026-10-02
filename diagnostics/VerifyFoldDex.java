@@ -31,9 +31,27 @@ public class VerifyFoldDex {
   if(i instanceof ReferenceInstruction x)s+=" ref="+x.getReference();
   return s;
  }
+ static void border(Map<String,ClassDef> old,Map<String,ClassDef> patched){
+  String owner="LX/08Nt;";require(old.containsKey(owner)&&patched.containsKey(owner),"Litho border class absent");
+  Method before=method(old.get(owner),"draw"),after=method(patched.get(owner),"draw");var a=code(before);var b=code(after);
+  require(b.size()==a.size()+5,"Litho border guard size");require(before.getImplementation().getRegisterCount()==after.getImplementation().getRegisterCount(),"Litho border registers changed");
+  for(int i=0;i<a.size();i++)require(key(a.get(i)).equals(key(b.get(i+5))),"Litho border native instruction mismatch "+i);
+  require(b.get(0).getOpcode()==Opcode.INVOKE_STATIC_RANGE&&((ReferenceInstruction)b.get(0)).getReference().toString().equals(EXT+"->skipMountedMediaBorder(Landroid/graphics/drawable/Drawable;)Z"),"Litho border guard target");
+  var call=(RegisterRangeInstruction)b.get(0);require(call.getStartRegister()==before.getImplementation().getRegisterCount()-2&&call.getRegisterCount()==1,"Litho border receiver");
+  require(b.get(1).getOpcode()==Opcode.MOVE_RESULT&&((OneRegisterInstruction)b.get(1)).getRegisterA()==0&&b.get(2).getOpcode()==Opcode.IF_EQZ&&((OneRegisterInstruction)b.get(2)).getRegisterA()==0&&((OffsetInstruction)b.get(2)).getCodeOffset()==3,"Litho border native fallback");
+  require(b.get(3).getOpcode()==Opcode.RETURN_VOID&&b.get(4).getOpcode()==Opcode.NOP,"Litho border skip prefix");
+  var x=before.getImplementation().getTryBlocks();var y=after.getImplementation().getTryBlocks();require(x.size()==y.size(),"Litho border try count");
+  for(int i=0;i<x.size();i++){var t=x.get(i);var u=y.get(i);require(u.getStartCodeAddress()==t.getStartCodeAddress()+8&&u.getCodeUnitCount()==t.getCodeUnitCount(),"Litho border try shift");require(t.getExceptionHandlers().size()==u.getExceptionHandlers().size(),"Litho border handler count");
+   for(int j=0;j<t.getExceptionHandlers().size();j++){var h=t.getExceptionHandlers().get(j);var k=u.getExceptionHandlers().get(j);require(Objects.equals(h.getExceptionType(),k.getExceptionType())&&k.getHandlerCodeAddress()==h.getHandlerCodeAddress()+8,"Litho border handler shift");}}
+  ClassDef text=old.get("LX/07kE;");require(text!=null,"Caption TextDrawable absent");boolean layout=false,offset=false;
+  for(Field field:text.getInstanceFields()){layout|=field.getName().equals("A0B")&&field.getType().equals("Landroid/text/Layout;");offset|=field.getName().equals("A01")&&field.getType().equals("F");}
+  require(layout&&offset,"Pinned caption Layout geometry changed");
+  System.out.println("PASS Litho border: "+a.size()+" native instructions unchanged; receiver, fallback and try/handlers preserved. Caption Layout fields verified.");
+ }
  public static void main(String[] args)throws Exception {
   var old=load(args[0]);var patched=load(args[1]);String rounded="Lcom/instagram/ui/widget/roundedcornerlayout/RoundedCornerFrameLayout;";
   require(patched.keySet().containsAll(old.keySet()),"Missing original classes");
+  border(old,patched);
   Method a=method(old.get(rounded),"dispatchDraw"),b=method(patched.get(rounded),"dispatchDraw");var x=code(a);var y=code(b);
   require(y.size()==x.size()+5,"5 instruction prefix");require(a.getImplementation().getRegisterCount()==b.getImplementation().getRegisterCount(),"registers changed");
   for(int i=0;i<x.size();i++)require(key(x.get(i)).equals(key(y.get(i+5))),"native instruction mismatch "+i);
@@ -49,7 +67,7 @@ public class VerifyFoldDex {
   var triesA=a.getImplementation().getTryBlocks();var triesB=b.getImplementation().getTryBlocks();require(triesA.size()==triesB.size(),"try count");
   for(int i=0;i<triesA.size();i++){var t=triesA.get(i);var u=triesB.get(i);require(u.getStartCodeAddress()==t.getStartCodeAddress()+10 && u.getCodeUnitCount()==t.getCodeUnitCount(),"try shift");
    require(t.getExceptionHandlers().size()==u.getExceptionHandlers().size(),"handler count");for(int j=0;j<t.getExceptionHandlers().size();j++){var h=t.getExceptionHandlers().get(j);var k=u.getExceptionHandlers().get(j);require(Objects.equals(h.getExceptionType(),k.getExceptionType())&&k.getHandlerCodeAddress()==h.getHandlerCodeAddress()+10,"handler shift");}}
-  var expected=new LinkedHashMap<String,Integer>();expected.put("attachViewer",2);expected.put("beforeViewerDraw",1);expected.put("routeTouch",1);expected.put("skipRoundedCardDecoration",1);var counts=new HashMap<String,Integer>();
+  var expected=new LinkedHashMap<String,Integer>();expected.put("attachViewer",2);expected.put("beforeViewerDraw",1);expected.put("routeTouch",1);expected.put("skipRoundedCardDecoration",1);expected.put("skipMountedMediaBorder",1);var counts=new HashMap<String,Integer>();
   require(patched.containsKey(EXT),"extension absent");
   for(ClassDef c:patched.values())if(!c.getType().startsWith("Lapp/morphe/extension/"))for(Method m:c.getMethods())if(m.getImplementation()!=null)for(Instruction ins:m.getImplementation().getInstructions()){
    if(ins instanceof ReferenceInstruction ri && ri.getReference() instanceof MethodReference ref && ref.getDefiningClass().equals(EXT) && expected.containsKey(ref.getName())){
