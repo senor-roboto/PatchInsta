@@ -1126,7 +1126,7 @@ diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsClipping.java
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,75 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1150,14 +1150,22 @@ new file mode 100644
 +        ViewGroup group = (ViewGroup) boundary;
 +        State state = states.get(group);
 +        if (state == null) { state = new State(group); states.put(group, state); }
-+        state.used = frame; state.open(group);
++        state.used = frame; state.open(group, true);
++    }
++    /** Permit translated native children while retaining the caller's precise line clip. */
++    void openChildren(View boundary) {
++        if (!(boundary instanceof ViewGroup)) return;
++        ViewGroup group = (ViewGroup) boundary;
++        State state = states.get(group);
++        if (state == null) { state = new State(group); states.put(group, state); }
++        state.used = frame; state.open(group, false);
 +    }
 +    void openPath(View leaf, View boundary) {
 +        for (ViewParent p = leaf.getParent(); p instanceof ViewGroup && p != boundary; p = p.getParent()) {
 +            ViewGroup group = (ViewGroup) p;
 +            State state = states.get(group);
 +            if (state == null) { state = new State(group); states.put(group, state); }
-+            state.used = frame; state.open(group);
++            state.used = frame; state.open(group, true);
 +        }
 +    }
 +    void endFrame() {
@@ -1173,23 +1181,24 @@ new file mode 100644
 +    private static final class State {
 +        final boolean children, padding, outline;
 +        Rect bounds;
++        boolean releasedBounds;
 +        long used;
 +        State(ViewGroup group) {
 +            children = group.getClipChildren(); padding = group.getClipToPadding();
 +            outline = group.getClipToOutline(); bounds = group.getClipBounds();
 +        }
-+        void open(ViewGroup group) {
++        void open(ViewGroup group, boolean releaseBounds) {
 +            if (group.getClipChildren()) group.setClipChildren(false);
 +            if (group.getClipToPadding()) group.setClipToPadding(false);
 +            if (group.getClipToOutline()) group.setClipToOutline(false);
 +            Rect current = group.getClipBounds();
-+            if (current != null) { bounds = current; group.setClipBounds(null); }
++            if (releaseBounds && current != null) { bounds = current; releasedBounds = true; group.setClipBounds(null); }
 +        }
 +        void restore(ViewGroup group) {
 +            if (!group.getClipChildren()) group.setClipChildren(children);
 +            if (!group.getClipToPadding()) group.setClipToPadding(padding);
 +            if (!group.getClipToOutline()) group.setClipToOutline(outline);
-+            if (group.getClipBounds() == null) group.setClipBounds(bounds);
++            if (releasedBounds && group.getClipBounds() == null) group.setClipBounds(bounds);
 +        }
 +    }
 +}
@@ -1903,7 +1912,7 @@ diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsMetadata.java
-@@ -0,0 +1,442 @@
+@@ -0,0 +1,458 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2101,15 +2110,18 @@ new file mode 100644
 +        // translate grandchildren independently: retain native row dispatch/listeners.
 +        float height = v.getHeight();
 +        if (s.caption) {
-+            int firstLine = mountedCaptionHeight(v);
-+            if (firstLine <= 0) {
++            Rect firstLine = mountedCaptionClip(v);
++            if (firstLine == null) {
 +                s.restore(v); s.fallback = "native-caption-line-unresolved";
 +                controls.metadataTarget(v, s.targets, false); return;
 +            }
-+            height = Math.min(height, firstLine);
++            // Instagram may translate its native scroll host above the caption's
++            // origin. Align the measured line bottom, retaining its negative top.
++            height = firstLine.bottom;
++            if (firstLine.top < 0) clipping.openChildren(v);
 +            Rect current = v.getClipBounds();
 +            if (s.appliedClip == null || !java.util.Objects.equals(current, s.appliedClip)) s.nativeClip = current;
-+            s.appliedClip = new Rect(0, 0, Math.min(v.getWidth(), Math.round(available)), Math.round(height));
++            s.appliedClip = new Rect(0, firstLine.top, Math.min(v.getWidth(), Math.round(available)), firstLine.bottom);
 +            if (!s.appliedClip.equals(current)) v.setClipBounds(s.appliedClip);
 +        } else {
 +            if (v.getWidth() > available) {
@@ -2128,40 +2140,53 @@ new file mode 100644
 +        clipping.openPath(v, viewer);
 +        controls.metadataTarget(v, s.targets, true);
 +    }
-+    private static int mountedCaptionHeight(View v) {
++    private static Rect mountedCaptionClip(View v) {
 +        // Measure the existing Layout. Do not guess a dp height or read account text.
 +        ArrayList<View> children = new ArrayList<>(); Identity.collect(v, children, 0);
 +        RectF caption = new RectF(), host = new RectF(); Matrix transform = new Matrix();
 +        FoldReelsViews.bounds(v, caption, transform);
-+        float found = Float.NaN;
++        float found = Float.NaN, foundTop = Float.NaN;
 +        for (View child : children) {
-+            if (!FoldReelsViews.unitParents(child, v)) return 0;
-+            float localBottom = Float.NaN;
++            if (!FoldReelsViews.unitParents(child, v)) return null;
++            float localBottom = Float.NaN, localTop = Float.NaN;
 +            if (child instanceof TextView) {
 +                android.text.Layout layout = ((TextView) child).getLayout();
-+                if (layout != null && layout.getLineCount() > 0)
++                if (layout != null && layout.getLineCount() > 0) {
 +                    localBottom = ((TextView) child).getTotalPaddingTop() - child.getScrollY() + layout.getLineBottom(0);
++                    localTop = ((TextView) child).getTotalPaddingTop() - child.getScrollY() + layout.getLineTop(0);
++                }
 +            } else if (FoldReelsViews.classIs(child, "com.facebook.litho.ComponentHost")) {
 +                try {
 +                    Object mounted = child.getClass().getMethod("getDrawables").invoke(child);
-+                    if (!(mounted instanceof java.util.List)) return 0;
++                    if (!(mounted instanceof java.util.List)) return null;
 +                    for (Object item : (java.util.List<?>) mounted) {
 +                        if (!(item instanceof android.graphics.drawable.Drawable)
 +                                || !"X.07kE".equals(item.getClass().getName())) continue;
-+                        if (Float.isFinite(localBottom)) return 0;
++                        if (Float.isFinite(localBottom)) return null;
 +                        localBottom = nativeCaptionLineBottom((android.graphics.drawable.Drawable) item);
++                        localTop = nativeCaptionLineTop((android.graphics.drawable.Drawable) item);
 +                    }
-+                } catch (ReflectiveOperationException | RuntimeException ignored) { return 0; }
++                } catch (ReflectiveOperationException | RuntimeException ignored) { return null; }
 +            }
 +            if (!Float.isFinite(localBottom)) continue;
-+            if (Float.isFinite(found)) return 0; // Ambiguous mounted text stays native.
++            if (!Float.isFinite(localTop)) return null;
++            if (Float.isFinite(found)) return null; // Ambiguous mounted text stays native.
 +            FoldReelsViews.bounds(child, host, transform);
 +            found = host.top - caption.top + localBottom;
++            foundTop = host.top - caption.top + localTop;
 +        }
-+        return Float.isFinite(found) && found > 0 && found <= v.getHeight() ? (int) Math.ceil(found) : 0;
++        if (!Float.isFinite(found) || !Float.isFinite(foundTop) || found <= foundTop || found > v.getHeight()) return null;
++        Rect line = new Rect(0, Math.min(0, (int) Math.floor(foundTop)), v.getWidth(), (int) Math.ceil(found));
++        return line.height() > 0 && line.height() <= v.getHeight() ? line : null;
 +    }
-+    private static int captionSpace(View v) { int measured = mountedCaptionHeight(v); return measured > 0 ? measured : v.getHeight(); }
++    private static int captionSpace(View v) { Rect line = mountedCaptionClip(v); return line != null ? line.height() : v.getHeight(); }
++    private static float nativeCaptionLineTop(android.graphics.drawable.Drawable drawable) {
++        return nativeCaptionLineEdge(drawable, false);
++    }
 +    static float nativeCaptionLineBottom(android.graphics.drawable.Drawable drawable) {
++        return nativeCaptionLineEdge(drawable, true);
++    }
++    private static float nativeCaptionLineEdge(android.graphics.drawable.Drawable drawable, boolean bottom) {
 +        // Instagram 439 TextDrawable.draw translates by bounds.top + A01 then draws A0B.
 +        // Both fields are public in the pinned APK. Layout access never calls getText().
 +        try {
@@ -2171,7 +2196,7 @@ new file mode 100644
 +            android.text.Layout layout = (android.text.Layout) layoutField.get(drawable);
 +            float offset = offsetField.getFloat(drawable);
 +            if (layout == null || layout.getLineCount() == 0 || !Float.isFinite(offset)) return Float.NaN;
-+            return drawable.getBounds().top + offset + layout.getLineBottom(0);
++            return drawable.getBounds().top + offset + (bottom ? layout.getLineBottom(0) : layout.getLineTop(0));
 +        } catch (ReflectiveOperationException | RuntimeException ignored) { return Float.NaN; }
 +    }
 +    private static int lineHeight(View view) {
@@ -3949,7 +3974,7 @@ diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/p
 new file mode 100644
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java
-@@ -0,0 +1,164 @@
+@@ -0,0 +1,197 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Canvas;
@@ -4043,6 +4068,39 @@ new file mode 100644
 +        mounted(1);((FrameLayout)captionText.getParent()).removeView(captionText);discover();mode(FoldReelsMetadata.Mode.COMPACT);
 +        assertNull(caption.getClipBounds());assertEquals(0,caption.getTranslationY(),.01f);
 +        assertTrue(report(),report().contains("native-caption-line-unresolved"));
++    }
++    @Test public void negativelyTranslatedNativeCaptionKeepsItsWholeLineAndNativeClick() {
++        mounted(1);View scroll=caption.getChildAt(0);scroll.setTranslationY(-74.25f);
++        View text=((FrameLayout)scroll).getChildAt(0);AtomicInteger hits=new AtomicInteger();text.setOnClickListener(v->hits.incrementAndGet());
++        discover();
++        for(int frame=0;frame<3;frame++) {
++            mode(FoldReelsMetadata.Mode.COMPACT);
++            float top=28-74.25f, bottom=top+captionText.getLayout().getLineBottom(0);
++            assertEquals((int)Math.floor(top),caption.getClipBounds().top);
++            assertEquals((int)Math.ceil(bottom),caption.getClipBounds().bottom);
++            assertFalse(caption.getClipChildren());assertFalse(caption.getClipToPadding());
++            assertEquals(-74.25f,scroll.getTranslationY(),.01f);
++            RectF c=bounds(caption), root=bounds(viewer);
++            float y=c.top-root.top+(top+bottom)*.5f;
++            send(MotionEvent.ACTION_DOWN,c.left-root.left+20,y);send(MotionEvent.ACTION_UP,c.left-root.left+20,y);
++            assertEquals(frame+1,hits.get());
++        }
++        mode(FoldReelsMetadata.Mode.FULL);
++        assertNull(caption.getClipBounds());assertTrue(caption.getClipChildren());assertTrue(caption.getClipToPadding());
++        assertEquals(0,caption.getTranslationY(),.01f);assertEquals(-74.25f,scroll.getTranslationY(),.01f);
++    }
++    @Test public void nativeCaptionOffsetChangesDoNotCollapseLineOrOverlapAuthor() {
++        mounted(1);View scroll=caption.getChildAt(0);discover();
++        for(float offset:new float[]{-74.25f,-50.5f,0,-74.25f}) {
++            scroll.setTranslationY(offset);mode(FoldReelsMetadata.Mode.COMPACT);
++            float lineTop=bounds(captionText).top+captionText.getLayout().getLineTop(0);
++            float lineBottom=bounds(captionText).top+captionText.getLayout().getLineBottom(0);
++            RectF c=bounds(caption);
++            assertTrue(c.top+caption.getClipBounds().top<=lineTop);
++            assertTrue(c.top+caption.getClipBounds().bottom>=lineBottom);
++            assertTrue(bounds(row).bottom+5<=lineTop);
++            assertEquals(bounds(viewer).bottom-12,c.top+caption.getClipBounds().bottom,.01f);
++        }
 +    }
 +    public static final class NativeCaption extends Drawable {
 +        public android.text.Layout A0B; public float A01;

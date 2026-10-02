@@ -83,7 +83,7 @@ def test_results(upstream):
     root = upstream / 'extensions/instagram/build/test-results/testReleaseUnitTest'
     expected = {'FoldReelsRuntimeTest':16, 'FoldReelsLifecycleTest':25, 'FoldReelsPreferencesTest':7,
                 'FoldReelsPresentationTest':23, 'FoldReelsScrimTest':6, 'FoldReelsUpdateTest':15,
-                'FoldReelsViewportTest':16, 'FoldReelsDrawingTest':4, 'FoldReelsNativeDecorationTest':8, 'FoldReelsNativeScrimTest':6, 'FoldReelsLithoTest':16, 'FoldReelsProgressTest':9, 'FoldReelsMountedEvidenceTest':10}
+                'FoldReelsViewportTest':16, 'FoldReelsDrawingTest':4, 'FoldReelsNativeDecorationTest':8, 'FoldReelsNativeScrimTest':6, 'FoldReelsLithoTest':18, 'FoldReelsProgressTest':9, 'FoldReelsMountedEvidenceTest':10}
     suites = {}
     for report in root.glob('TEST-*FoldReels*Test.xml'):
         suite = ET.parse(report).getroot()
