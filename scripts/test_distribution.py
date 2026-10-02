@@ -4,13 +4,49 @@ import unittest
 import zipfile
 from pathlib import Path
 from bundle import digest, validate_mpp, verify_checksums, version_tuple
-from publish import metadata, verify_public, find_release, select_release, upload_assets, load_device_evidence, verify_candidate
+from publish import metadata, verify_public, find_release, select_release, upload_assets, load_device_evidence, load_publication_evidence, publication_validation_note, verify_candidate
 from io import BytesIO
 import hashlib
 from unittest.mock import patch
 
 
 class DistributionTests(unittest.TestCase):
+    def offline_evidence(self):
+        return {'schema':'patchinsta-authorized-offline-release/v1', 'version':'4.1.9',
+                'candidate_run_id':'12345', 'source_commit':'a'*40, 'mpp_sha256':'b'*64,
+                'user_requested_publication_without_physical_test':True,
+                'physical_device_validation':'pending_user_test',
+                'lab_apk_sha256':'c'*64, 'original_apkm_sha256':'d'*64,
+                'checks':dict.fromkeys(('all_60_patches_applied', 'original_classes_retained',
+                    'no_duplicate_classes', 'native_libraries_unchanged', 'border_guard_verified',
+                    'apk_signature_verified', 'zip_alignment_verified', 'emulator_startup_pass'), True)}
+
+    def test_explicit_offline_release_records_pending_physical_validation(self):
+        data=self.offline_evidence()
+        with tempfile.TemporaryDirectory() as directory:
+            evidence=Path(directory)/'evidence.json'; evidence.write_text(json.dumps(data))
+            actual=load_publication_evidence(evidence,{'version':'4.1.9'},'12345','a'*40,'b'*64)
+            note=publication_validation_note(actual)
+            self.assertIn('remains to be confirmed', note)
+            self.assertNotIn('Physical Samsung Fold validation passed', note)
+
+    def test_offline_release_rejects_unapproved_incomplete_or_false_physical_claim(self):
+        for change in ({'user_requested_publication_without_physical_test':False},
+                       {'physical_device_validation':'passed'}, {'checks':{}}, {'lab_apk_sha256':''},
+                       {'original_apkm_sha256':''}, {'version':'4.2.0'}):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
+                evidence=Path(directory)/'evidence.json'
+                evidence.write_text(json.dumps({**self.offline_evidence(), **change}))
+                with self.assertRaises(ValueError):
+                    load_publication_evidence(evidence,{'version':'4.1.9'},'12345','a'*40,'b'*64)
+
+    def test_offline_release_rejects_a_different_candidate(self):
+        for run, commit, digest in [('999','a'*40,'b'*64),('12345','c'*40,'b'*64),('12345','a'*40,'c'*64)]:
+            with self.subTest(run=run,commit=commit,digest=digest), tempfile.TemporaryDirectory() as directory:
+                evidence=Path(directory)/'evidence.json'; evidence.write_text(json.dumps(self.offline_evidence()))
+                with self.assertRaisesRegex(ValueError,'does not match'):
+                    load_publication_evidence(evidence,{'version':'4.1.9'},run,commit,digest)
+
     def physical_evidence(self):
         return {
             'schema':'patchinsta-device-validation/v1', 'version':'4.1.9',
@@ -181,4 +217,3 @@ class DistributionTests(unittest.TestCase):
 
 
 if __name__=='__main__': unittest.main()
-

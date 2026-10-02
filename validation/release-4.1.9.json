@@ -1,0 +1,37 @@
+{
+  "schema": "patchinsta-authorized-offline-release/v1",
+  "version": "4.1.9",
+  "candidate_run_id": "37001703841",
+  "source_commit": "b439b5e6d2e2e01627ea2bb0546383921f224c55",
+  "mpp_sha256": "c65259d8f9891d8a9e38fcc47e4f37e06216e64df780c4a1526d422a14089308",
+  "user_requested_publication_without_physical_test": true,
+  "physical_device_validation": "pending_user_test",
+  "requested_at": "2026-10-02",
+  "authorization": "User explicitly requested publication after automated checks to test through the existing Morphe source; phone connection is optional for this delivery.",
+  "original_apkm_sha256": "1f20e342cc878225c141c83125ea46773ee8ea9491b8bd0469907de496097c0e",
+  "lab_apk_sha256": "0d54c9c6c4fecf47ae6e295cb99615883d956885253eef53b41a4d6e1bd0c710",
+  "checks": {
+    "all_60_patches_applied": true,
+    "original_classes_retained": true,
+    "no_duplicate_classes": true,
+    "native_libraries_unchanged": true,
+    "border_guard_verified": true,
+    "apk_signature_verified": true,
+    "zip_alignment_verified": true,
+    "emulator_startup_pass": true
+  },
+  "emulator": {
+    "android_sdk": 35,
+    "isolated_package": "com.instagram.android.patchinstalab",
+    "launch_status": "ok",
+    "activity": "com.instagram.nux.activity.BloksSignedOutFragmentActivity",
+    "crash_buffer": "empty",
+    "reels_visual_test": false
+  },
+  "automated_tests": {
+    "android_scenarios": 141,
+    "bytecode_guard_tests": 22,
+    "policy_geometry_checks": 305,
+    "mapping_checks": 13
+  }
+}

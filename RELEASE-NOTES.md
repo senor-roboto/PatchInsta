@@ -1,16 +1,9 @@
-# PatchInsta 4.1.8 candidate
+# PatchInsta 4.1.9
 
-This is candidate 4.1.8, intended to become accessible from the existing Morphe source after publication; Fold visual validation remains unverified.
+- Cible le cadre résiduel identifié dans le diagnostic Fold : BorderColorDrawable Litho sur le parent du média. La neutralisation reste limitée au lecteur compact transformé et aux réglages de nettoyage de l'écran externe.
+- Reconnaît le bloc auteur Litho et adapte séparément le dégradé inférieur, en préservant les contrôles natifs.
+- Mesure la première ligne de légende et ses offsets natifs ; conserve la présentation native si la mesure est ambiguë.
+- 141 scénarios Android, 22 contrôles bytecode, 305 contrôles de géométrie et 13 contrôles de mappings passent. Les 60 patches s'appliquent au véritable APKM Instagram 439 ; l'APK de laboratoire démarre dans l'émulateur sans crash relevé.
+- Publication demandée par l'utilisateur pour tester via sa source Morphe existante. Le rendu visuel sur le Fold reste à confirmer ; aucun test physique réussi n'est revendiqué.
 
-
-- Corrige le rejet de la référence valide à ViewGroup dans le dispatch arrondi d'Instagram 439.
-- Corrige ensuite la recherche de méthode fondée sur une égalité String/ImmutableMethodParameter : remplacement par identité validée, caches virtuels synchronisés.
-- 60 patches appliqués à l'APKM original 439.0.0.37.89, avec Fold et Clone ; APK reconstruit, 14 bibliothèques natives préservées, aucun patch en échec.
-- Les 27 instructions natives du dispatch sont conservées ; garde de 5 instructions, registres et handlers vérifiés dans l'APK produit.
-- CI shared-source evidence: 22 bytecode checks and 136 Android scenarios passed. A generic API 35 emulator installed and started an isolated test-signed clone APK; no real Fold/Reels visual or Samsung rendering validation is claimed.
-
-### Candidate validation
-
-The 4.1.8 candidate keeps the scoped Fold Reels runtime changes and adds the Litho border audit/guard path. Local reconstruction applied 60/60 selected patches to Instagram 439 with Clone; static DEX and packaging checks passed. A generic API 35 emulator installed and started the signed test APK. Real Fold/Reels visual border removal, Samsung compositor behavior and physical-device validation remain unverified.
-
-Dans Morphe, actualiser la même source PatchInsta, repatcher l'APKM original avec Adaptive Fold Reels et les patches habituels, puis installer par-dessus avec le même package Clone et la même clé de signature. Un ancien MPP RC importé localement doit être désélectionné pour cette opération.
+Dans Morphe, actualiser la source PatchInsta existante, repatcher l'APKM original Instagram 439.0.0.37.89 avec Adaptive Fold Reels et la sélection habituelle, puis installer par-dessus avec le même package Clone et la même clé de signature. Ne pas désinstaller l'application quotidienne.

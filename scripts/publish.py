@@ -11,12 +11,13 @@ import time
 import hashlib
 import argparse
 import re
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import urlopen
 from urllib.error import HTTPError
 from urllib.parse import quote
-from bundle import verify_kit, version_tuple
+from bundle import digest, verify_kit, version_tuple
 
 
 def gh(*args, input=None):
@@ -91,7 +92,11 @@ def metadata(config, release):
     version_tuple(config['version'])
     # Manager's DTO uses kotlinx.datetime.LocalDateTime, without a timezone suffix.
     created = datetime.fromisoformat(release['published_at'].replace('Z','+00:00')).astimezone(timezone.utc).replace(tzinfo=None).isoformat(timespec='seconds')
-    return {'created_at':created, 'description':'Instagram 439 : chemin normal RoundedCornerFrameLayout vérifié même avec handlers R8 ; garde bytecode conservé.',
+    description = ('Instagram 439 : correction du cadre Litho des Reels et mesure native de la légende ; '
+                   '141 scénarios Android, 60 patches et démarrage isolé vérifiés. Rendu Fold à confirmer.'
+                   if config['version'] == '4.1.9' else
+                   'Instagram 439 : chemin normal RoundedCornerFrameLayout vérifié même avec handlers R8 ; garde bytecode conservé.')
+    return {'created_at':created, 'description':description,
             'download_url':f"https://github.com/{config['repository']}/releases/download/v{config['version']}/PatchInsta-{config['version']}.mpp",
             'signature_download_url':None, 'page_url':release['html_url'], 'version':config['version']}
 
@@ -162,6 +167,40 @@ def load_device_evidence(path, config, candidate_run_id, source_commit, mpp_sha2
     return evidence
 
 
+def load_publication_evidence(path, config, candidate_run_id, source_commit, mpp_sha256):
+    evidence = json.loads(Path(path).read_text())
+    if evidence.get('schema') == 'patchinsta-device-validation/v1':
+        return load_device_evidence(path, config, candidate_run_id, source_commit, mpp_sha256)
+    if evidence.get('schema') != 'patchinsta-authorized-offline-release/v1' or config['version'] != '4.1.9':
+        raise ValueError('Unsupported publication evidence schema or version')
+    for key, value in {'version': config['version'], 'candidate_run_id': str(candidate_run_id),
+                       'source_commit': source_commit, 'mpp_sha256': mpp_sha256}.items():
+        if evidence.get(key) != value:
+            raise ValueError(f'Publication evidence {key} does not match candidate')
+    if evidence.get('user_requested_publication_without_physical_test') is not True:
+        raise ValueError('Offline publication requires the explicit user request')
+    if evidence.get('physical_device_validation') != 'pending_user_test':
+        raise ValueError('Offline evidence must not claim physical validation')
+    checks = evidence.get('checks', {})
+    required = ('all_60_patches_applied', 'original_classes_retained', 'no_duplicate_classes',
+                'native_libraries_unchanged', 'border_guard_verified', 'apk_signature_verified',
+                'zip_alignment_verified', 'emulator_startup_pass')
+    if any(checks.get(key) is not True for key in required):
+        raise ValueError('Offline publication is missing a required passing check')
+    for key in ('lab_apk_sha256', 'original_apkm_sha256'):
+        if not isinstance(evidence.get(key), str) or not re.fullmatch(r'[0-9a-f]{64}', evidence[key]):
+            raise ValueError(f'Offline publication requires {key}')
+    return evidence
+
+
+def publication_validation_note(evidence):
+    if evidence['schema'] == 'patchinsta-authorized-offline-release/v1':
+        return ('Automated checks and isolated APK startup passed. Published at the user\'s explicit '
+                'request for installation through the existing Morphe source. Physical Samsung Fold '
+                'Reels rendering remains to be confirmed by the user; no visual device pass is claimed.')
+    return 'Physical Samsung Fold validation passed.'
+
+
 def verify_candidate(root, config, candidate_run_id, requested_sha, evidence_path):
     if config['version'] != '4.1.9':
         raise ValueError('This promotion workflow is reserved for the 4.1.9 release')
@@ -181,8 +220,27 @@ def verify_candidate(root, config, candidate_run_id, requested_sha, evidence_pat
         raise ValueError('Candidate build metadata does not match the selected Actions run')
     if info.get('mpp_sha256') != mpp_sha256:
         raise ValueError('Candidate build metadata MPP digest differs from the downloaded MPP')
-    load_device_evidence(evidence_path, config, run_id, source_commit, mpp_sha256)
+    load_publication_evidence(evidence_path, config, run_id, source_commit, mpp_sha256)
     return expected, source_commit
+
+
+def refresh_release_docs(root, config):
+    # Preserve the tested MPP, source patch and build evidence byte for byte.
+    output = root/'output'
+    verify_kit(output, config)
+    for name in ('GUIDE-FR.md', 'CHANGELOG.md'):
+        (output/name).write_bytes((root/name).read_bytes())
+    zip_name = 'PatchInsta-'+config['version']+'.zip'
+    files = sorted(path for path in output.iterdir() if path.name not in (zip_name, 'SHA256SUMS.txt'))
+    inner_sums = ''.join(f'{digest(path)}  {path.name}\n' for path in files)
+    with zipfile.ZipFile(output/zip_name, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for name, data in [(path.name, path.read_bytes()) for path in files] + [('SHA256SUMS.txt', inner_sums.encode())]:
+            entry = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+            entry.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(entry, data)
+    (output/'SHA256SUMS.txt').write_text(''.join(f'{digest(path)}  {path.name}\n' for path in
+        sorted(output.iterdir()) if path.name != 'SHA256SUMS.txt'))
+    return verify_kit(output, config)
 
 
 def publish(root, evidence_path):
@@ -196,12 +254,17 @@ def publish(root, evidence_path):
     run_id = os.environ['CANDIDATE_RUN_ID']
     expected, source_commit = verify_candidate(
         root, config, run_id, os.environ['EXPECTED_MPP_SHA256'], evidence_path)
+    evidence = load_publication_evidence(evidence_path, config, run_id, source_commit,
+                                        expected['PatchInsta-'+config['version']+'.mpp'])
+    release_body = ((root/'RELEASE-NOTES.md').read_text() + '\n\n' + publication_validation_note(evidence)
+                    + f" Candidate: https://github.com/{repo}/actions/runs/{run_id}. MPP SHA-256: {expected['PatchInsta-'+config['version']+'.mpp']}")
     comparison = api(base+f'/compare/{source_commit}...{main_head}')
     if comparison.get('status') not in ('ahead', 'identical'):
         raise ValueError('Candidate source is not an ancestor of current main')
     old_feed = json.loads((root/'patches-bundle.json').read_text()) if (root/'patches-bundle.json').exists() else None
     if old_feed and version_tuple(config['version']) <= version_tuple(old_feed['version']):
         raise ValueError('Increment release.json and the bundle version before publishing a new source')
+    expected = refresh_release_docs(root, config)
     release = select_release(api(base+'/releases?per_page=100'),tag,'PatchInsta '+config['version'])
     if release is None:
         listed = json.loads(gh('release','list','--repo',repo,'--limit','100','--json','tagName,isDraft'))
@@ -212,7 +275,7 @@ def publish(root, evidence_path):
         # draft through a public, potentially stale collection or /tags endpoint.
         release = api(base+'/releases', {'tag_name':tag,'target_commitish':source_commit,
                       'name':'PatchInsta '+config['version'],'draft':True,
-                      'body':(root/'RELEASE-NOTES.md').read_text()+f"\n\nPhysical Samsung Fold validation passed. Candidate: https://github.com/{repo}/actions/runs/{run_id}. MPP SHA-256: {expected['PatchInsta-'+config['version']+'.mpp']}"})
+                      'body':release_body})
     # Published releases are immutable here. A retry may finish publishing the feed but never
     # silently replace the already-distributed binary, which contains a build timestamp.
     if release['draft']:
@@ -220,7 +283,7 @@ def publish(root, evidence_path):
             if release['assets'] or release['name'] != 'PatchInsta '+config['version'] or release['author']['login'] != 'github-actions[bot]':
                 raise ValueError('Nonempty or foreign draft belongs to a different source commit')
             release = api(base+'/releases/'+str(release['id']),
-                          {'tag_name':tag,'target_commitish':source_commit,'body':(root/'RELEASE-NOTES.md').read_text()+f"\n\nPhysical Samsung Fold validation passed. Candidate: https://github.com/{repo}/actions/runs/{run_id}. MPP SHA-256: {expected['PatchInsta-'+config['version']+'.mpp']}"}, 'PATCH')
+                          {'tag_name':tag,'target_commitish':source_commit,'body':release_body}, 'PATCH')
         release['assets'] = upload_assets(base,release,root/'output')
     with tempfile.TemporaryDirectory() as temp:
         download_assets(base,release['assets'],temp)
@@ -246,7 +309,7 @@ def publish(root, evidence_path):
     status = {'release':release['html_url'], 'feed_commit':feed_commit['sha'], 'anonymous_access':False,
               'candidate_run_id':run_id, 'source_commit':source_commit,
               'mpp_sha256':expected['PatchInsta-'+config['version']+'.mpp'],
-              'physical_device_validation':'passed'}
+              'physical_device_validation':evidence.get('physical_device_validation', 'passed')}
     private = api(base)['private']
     # Never present authenticated access as a working remote source in Manager.
     url = f'https://raw.githubusercontent.com/{repo}/main/patches-bundle.json'
@@ -263,11 +326,10 @@ def publish(root, evidence_path):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Promote a physically validated PatchInsta candidate')
-    parser.add_argument('--promote', action='store_true', help='require physical-device evidence and an approved MPP digest')
-    parser.add_argument('--evidence', default='validation-evidence.json', help='physical validation JSON file')
+    parser = argparse.ArgumentParser(description='Promote an explicitly validated PatchInsta candidate')
+    parser.add_argument('--promote', action='store_true', help='require publication evidence and an approved MPP digest')
+    parser.add_argument('--evidence', default='validation-evidence.json', help='publication validation JSON file')
     args = parser.parse_args()
     if not args.promote:
         parser.error('Direct publication is disabled; use the 4.1.9 promotion workflow')
     publish(Path(__file__).resolve().parents[1], Path(args.evidence))
-

@@ -1,8 +1,14 @@
 # PatchInsta 4.1.9 release gate
 
-The build workflow only creates a 30-day candidate artifact. It does not create a GitHub release or modify `patches-bundle.json`. The published 4.1.8 feed therefore remains the current stable source until a 4.1.9 candidate passes real Fold testing and is promoted explicitly.
+The build workflow only creates a 30-day candidate artifact. It does not publish a release or modify the Morphe feed.
 
-After the candidate build succeeds, install that artifact in the isolated test clone and complete the physical-device checks in the project validation plan. Keep screenshots locally and record their SHA-256 digests; do not upload account or Reel images to a public host. Start the **Promote physically validated PatchInsta 4.1.9** workflow on `main`, enter the candidate workflow run ID and the MPP SHA-256 from `SHA256SUMS.txt`, and provide a JSON attestation matching this schema:
+On 2026-10-02 the user explicitly authorized publication after the available automated checks so they can test through their existing Morphe source. This replaces the earlier physical-before-publication condition for this delivery. The **Publish verified PatchInsta 4.1.9** workflow publishes the exact candidate from run 37001703841 once when this delivery is merged. Its push trigger requires the previous main commit to be exactly `d139821fb4303420c37aff6d22ed0cb99dbc2394` and the release evidence file to change; later main pushes cannot satisfy that predecessor guard. Explicit manual dispatch remains available for a failed one-time delivery. It requires [the authorized offline release record](validation/release-4.1.9.json): exact version/run/source/MPP identity, explicit user request, all 60 patches, preserved original classes/native libraries, verified guard/signature/alignment and emulator startup. Missing checks, another candidate or a false physical-pass claim are rejected. The release and feed explicitly say physical Fold rendering remains pending.
+
+The tested MPP is unchanged. Current release documentation is refreshed separately and the ZIP/checksums regenerated deterministically. Durable release assets are downloaded and verified before advancing the feed; its unchanged anonymous URL and MPP download are then checked. Existing published assets cannot be replaced.
+
+The physical attestation format below remains available for a later actual device validation; it must never be fabricated to authorize an offline release.
+
+For an actual physical validation, complete the device checks and keep screenshots locally. The workflow's optional JSON input supports this schema:
 
 ```json
 {
@@ -36,5 +42,4 @@ After the candidate build succeeds, install that artifact in the isolated test c
 
 The workflow verifies that the run metadata, candidate commit, attestation, and MPP digest all identify the same build. It refuses other versions, changed bytes, failed or missing checks, insufficient scenario counts, and candidates whose source commit is not on current `main`. The attestation stays with the promotion run artifact and is not published in the public release, which contains only a concise validation note and the MPP digest. The MPP digest entered in the workflow is the digest that is verified and published.
 
-The attestation is a human record, not a machine observation of the phone. The tester must inspect the screenshots and complete the interactions on the physical Fold before submitting it. Do not promote on the basis of compilation or emulator results alone.
-
+The physical attestation is a human record, not a machine observation of the phone. The tester must inspect the screenshots and complete the interactions on the Fold before claiming a physical pass. The user-authorized offline publication uses its separate truthful schema.
