@@ -2,7 +2,7 @@ name: Build PatchInsta validation candidate
 
 on:
   push:
-    branches: [main, fix/rounded-dispatch-4.1.7, fix/litho-runtime-4.1.8, codex/fold-reels-4.1.9, codex/fold-reels-4.1.10]
+    branches: [main, fix/rounded-dispatch-4.1.7, fix/litho-runtime-4.1.8, codex/fold-reels-4.1.9, codex/fold-reels-4.1.10, codex/fold-reels-4.1.11]
     paths:
       - piko-fold-reels.patch
       - release.json
@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: crimera/piko
-          ref: 50744aa07bb41c4e1f942a06614ef4e6f2e3610c
+          ref: 9813ccd2eb36146b804e6eb0309286089761c9ba
           path: upstream
           persist-credentials: false
       - name: Apply the reviewed source patch

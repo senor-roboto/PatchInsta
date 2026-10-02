@@ -81,9 +81,7 @@ def verify_kit(directory, config):
 
 def test_results(upstream):
     root = upstream / 'extensions/instagram/build/test-results/testReleaseUnitTest'
-    expected = {'FoldReelsRuntimeTest':16, 'FoldReelsLifecycleTest':26, 'FoldReelsPreferencesTest':10,
-                'FoldReelsPresentationTest':23, 'FoldReelsScrimTest':6, 'FoldReelsUpdateTest':15,
-                'FoldReelsViewportTest':16, 'FoldReelsDrawingTest':4, 'FoldReelsNativeDecorationTest':8, 'FoldReelsNativeScrimTest':6, 'FoldReelsLithoTest':18, 'FoldReelsProgressTest':9, 'FoldReelsMountedEvidenceTest':10}
+    expected = {'FoldReelsDrawingTest': 4, 'FoldReelsLifecycleTest': 26, 'FoldReelsLithoTest': 18, 'FoldReelsMountedEvidenceTest': 10, 'FoldReelsNativeDecorationTest': 8, 'FoldReelsNativeScrimTest': 6, 'FoldReelsPosterTest': 3, 'FoldReelsPreferencesTest': 14, 'FoldReelsPresentationTest': 23, 'FoldReelsProgressTest': 11, 'FoldReelsRuntimeTest': 16, 'FoldReelsScrimTest': 7, 'FoldReelsUpdateTest': 15, 'FoldReelsViewportTest': 16}
     suites = {}
     for report in root.glob('TEST-*FoldReels*Test.xml'):
         suite = ET.parse(report).getroot()
