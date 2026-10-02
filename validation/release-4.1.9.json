@@ -1,6 +1,7 @@
 {
   "schema": "patchinsta-authorized-offline-release/v1",
   "version": "4.1.9",
+  "release_tag_tracks_publication_commit": true,
   "candidate_run_id": "37001703841",
   "source_commit": "b439b5e6d2e2e01627ea2bb0546383921f224c55",
   "mpp_sha256": "c65259d8f9891d8a9e38fcc47e4f37e06216e64df780c4a1526d422a14089308",
