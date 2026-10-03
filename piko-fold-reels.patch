@@ -104,10 +104,10 @@ index 00000000..366f5395
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
 new file mode 100644
-index 00000000..e309f442
+index 00000000..597e0c9d
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
-@@ -0,0 +1,661 @@
+@@ -0,0 +1,672 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -181,6 +181,7 @@ index 00000000..e309f442
 +        Configuration config = app.getResources().getConfiguration();
 +        kind = FoldReelsPolicy.classify(config.screenWidthDp, config.screenHeightDp);
 +        app.registerActivityLifecycleCallbacks(watcher); application = new WeakReference<>(app); installed = true;
++        FoldReelsTrace.register(app);
 +    }
 +    public static boolean isEnabled() { return installed && prefs != null && prefs.enabled(); }
 +    public static Boolean override(String key) {
@@ -190,6 +191,7 @@ index 00000000..e309f442
 +    }
 +    // Package-private lifecycle teardown also used by the real watcher tests; no fake presentation engine.
 +    static void resetForTests() {
++        FoldReelsTrace.reset();
 +        for (Watcher.Tracker tracker : watcher.trackers.values()) tracker.dispose();
 +        watcher.trackers.clear(); watcher.foreground.clear();
 +        for (View v : observedViewers.keySet()) v.removeOnAttachStateChangeListener(VIEWER_LISTENER);
@@ -257,6 +259,10 @@ index 00000000..e309f442
 +    public static int measurePager(View pager, int widthSpec, int heightSpec) {
 +        return FoldReelsPager.measureHeight(pager, heightSpec);
 +    }
++    public static boolean drawPauseShade(android.graphics.drawable.Drawable shade, android.graphics.Canvas canvas) {
++        return FoldReelsPauseShade.draw(shade,canvas);
++    }
++    public static Rect pauseShadeDirty(android.graphics.drawable.Drawable shade) { return FoldReelsPauseShade.dirty(shade); }
 +
 +    /** Injected into dispatchTouchEvent of the known Reels viewer only. */
 +    public static boolean routeTouch(View viewer, MotionEvent event) {
@@ -502,6 +508,7 @@ index 00000000..e309f442
 +            final ArrayList<WeakReference<View>> viewers = new ArrayList<>();
 +            final FoldReelsRenderer renderer = new FoldReelsRenderer(this::markDiscovery);
 +            final FoldReelsPager pager = new FoldReelsPager();
++            final FoldReelsPauseShade pauseShade = new FoldReelsPauseShade();
 +            final FoldReelsControls controls = new FoldReelsControls();
 +            final FoldReelsProgress progress = new FoldReelsProgress();
 +            final FoldReelsClipping clipping = new FoldReelsClipping();
@@ -661,6 +668,7 @@ index 00000000..e309f442
 +                    guarded("card", () -> card.discover(renderer, viewer), card::restore);
 +                    guarded("header", () -> header.discover(renderer, viewer, scope), header::restore);
 +                    guarded("scrim", () -> scrim.discover(renderer, viewer, header, scope), scrim::restore);
++                    guarded("pauseShade", () -> pauseShade.discover(renderer, viewer), pauseShade::restore);
 +                    guarded("metadata", () -> metadata.discover(renderer, viewer, controls), () -> metadata.restore(controls));
 +                    guarded("progress", () -> progress.discover(renderer, viewer, controls), () -> progress.restore(controls));
 +                }
@@ -690,8 +698,10 @@ index 00000000..e309f442
 +                    FoldReelsNativeDecoration.frame(watcher);
 +                    guarded("header", () -> header.frame(viewer, viewport, scope, p.crop, p.crop && prefs.hideHeader(inner), clipping), header::restore);
 +                    guarded("scrim", () -> scrim.frame(viewer, viewport, clipBoundary, p.crop && recognized, p.card, clipping), scrim::restore);
++                    guarded("pauseShade", () -> pauseShade.frame(viewer, viewport, clipBoundary, p.crop && recognized, clipping), pauseShade::restore);
 +                } finally { clipping.endFrame(); }
 +                guarded("shortcut", () -> updateChip(a, viewer, p), () -> removeChip());
++                FoldReelsTrace.capture(this);
 +            }
 +            private void removeChip() {
 +                TextView old = chip.get(); if (old != null && old.getParent() instanceof ViewGroup) ((ViewGroup) old.getParent()).removeView(old); chip.clear();
@@ -735,6 +745,7 @@ index 00000000..e309f442
 +            }
 +            void stopPresentation() {
 +                pager.restore(); layoutPending=false;
++                pauseShade.restore();
 +                progress.restore(controls); metadata.restore(controls); renderer.restore(); controls.restore(); card.restore(); scrim.restore(); header.restore(); clipping.restore(); chrome.restore();
 +                currentViewer.clear(); discoveryDirty = true; active = false;
 +                FoldReelsNativeDecoration.frame(watcher);
@@ -761,7 +772,7 @@ index 00000000..e309f442
 +                out.append("profile crop=").append(p.crop).append(" zoom=").append(p.zoom).append(" actions=").append(p.actions)
 +                        .append(" hideHeader=").append(prefs.hideHeader(windowKind == FoldReelsPolicy.WindowKind.WIDE)).append(" metadata=").append(p.metadata).append(" card=").append(p.card).append(" shortcut=").append(p.shortcut).append('\n');
 +                spaces.diagnostics(out);
-+                pager.diagnostics(out); renderer.diagnostics(out); controls.diagnostics(out); progress.diagnostics(out); card.diagnostics(out); metadata.diagnostics(out); scrim.diagnostics(out); header.diagnostics(out);
++                pager.diagnostics(out); renderer.diagnostics(out); controls.diagnostics(out); progress.diagnostics(out); card.diagnostics(out); metadata.diagnostics(out); scrim.diagnostics(out); pauseShade.diagnostics(out); header.diagnostics(out);
 +                out.append("chrome ").append(chrome.status()).append('\n');
 +            }
 +            @Override public void onConfigurationChanged(Configuration config) { capture(); markDiscovery(); requestFrame(); }
@@ -1431,10 +1442,10 @@ index 00000000..95480aa4
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
 new file mode 100644
-index 00000000..8e4be23f
+index 00000000..c8ce5917
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
-@@ -0,0 +1,356 @@
+@@ -0,0 +1,362 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1689,6 +1700,12 @@ index 00000000..8e4be23f
 +                pagerY = Math.max(inset, Math.min(viewer.getHeight()-inset, down.getY())) - down.getY();
 +            }
 +            nativeDispatch(viewer, down); // Native pager receives a complete DOWN/MOVE/... stream.
++            if (action == MotionEvent.ACTION_UP && drag) {
++                // GestureDetector clears its tap region on MOVE, not merely a
++                // distant UP. Preserve that native contract for a sparse stream.
++                MotionEvent moved=MotionEvent.obtain(event); moved.setAction(MotionEvent.ACTION_MOVE);
++                nativeDispatch(viewer,moved); moved.recycle();
++            }
 +        }
 +        if (swiping) nativeDispatch(viewer, event); else dispatch(rail, viewer, event);
 +        if (last != null) last.recycle(); last = MotionEvent.obtain(event);
@@ -2127,10 +2144,10 @@ index 00000000..b027fdf2
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsMetadata.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsMetadata.java
 new file mode 100644
-index 00000000..cec4f2d7
+index 00000000..77708e27
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsMetadata.java
-@@ -0,0 +1,493 @@
+@@ -0,0 +1,496 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2462,7 +2479,10 @@ index 00000000..cec4f2d7
 +        for (Map.Entry<View, State> e : states.entrySet()) out.append("metadata ").append(FoldReelsDiagnostics.id(e.getKey()))
 +                .append(" mounted=").append(e.getValue().mounted).append(" caption=").append(e.getValue().caption).append(" moved=").append(e.getValue().moved)
 +                .append(" availableWidth=").append(e.getValue().available).append(" layoutWidth=").append(e.getKey().getLayoutParams().width)
-+                .append(" fallback=").append(e.getValue().fallback).append('\n');
++                .append(" fallback=").append(e.getValue().fallback)
++                .append(" page=").append(FoldReelsDiagnostics.id(e.getValue().page.get()))
++                .append(" local=").append(e.getKey().getTranslationX()).append(',').append(e.getKey().getTranslationY())
++                .append(" size=").append(e.getKey().getWidth()).append('x').append(e.getKey().getHeight()).append('\n');
 +    }
 +    void restore(FoldReelsControls controls) { visibility.restore(); for (Map.Entry<View, State> e : states.entrySet()) release(e.getKey(), e.getValue(), controls); states.clear(); }
 +    private void release(View v, State s, FoldReelsControls controls) { s.restore(v); controls.metadataTarget(v, s.targets, false); v.removeOnAttachStateChangeListener(this); }
@@ -2940,6 +2960,114 @@ index 00000000..66eec68c
 +    }
 +    private static final class Plan { int height; }
 +}
+diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPauseShade.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPauseShade.java
+new file mode 100644
+index 00000000..e4a62666
+--- /dev/null
++++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPauseShade.java
+@@ -0,0 +1,102 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.morphe.extension.instagram.patches.reels;
++
++import android.graphics.Canvas;
++import android.graphics.Matrix;
++import android.graphics.Rect;
++import android.graphics.RectF;
++import android.graphics.drawable.Drawable;
++import android.view.View;
++import android.view.ViewGroup;
++import java.lang.ref.WeakReference;
++import java.util.Iterator;
++import java.util.Map;
++import java.util.WeakHashMap;
++import java.util.function.Function;
++import java.util.function.Predicate;
++
++/** Remaps only the verified native pause foreground. Its colour/opacity,
++ * callback, class, bounds, animations, controls and hitboxes are untouched. */
++final class FoldReelsPauseShade {
++    private static final WeakHashMap<Drawable, Plan> drawing = new WeakHashMap<>();
++    private static final ThreadLocal<Boolean> forwarding = new ThreadLocal<>();
++    private final WeakHashMap<View, State> states = new WeakHashMap<>();
++    private final Function<View,String> names;
++    private final Predicate<Drawable> supported;
++    private final Matrix matrix=new Matrix(),inverse=new Matrix();
++    private final RectF target=new RectF(),work=new RectF();
++    private int generation,nodes;
++    FoldReelsPauseShade(){this(FoldReelsChrome::resourceName,d->d!=null && d.getClass().getName().equals("X.01Qh"));}
++    FoldReelsPauseShade(Function<View,String> names,Predicate<Drawable> supported){this.names=names;this.supported=supported;}
++    void discover(FoldReelsRenderer renderer,View viewer){
++        generation++;nodes=0;
++        renderer.visitPresentation((page,scope)->scan(scope,page,0),viewer);
++        for(Iterator<Map.Entry<View,State>> it=states.entrySet().iterator();it.hasNext();){
++            Map.Entry<View,State> e=it.next();if(e.getValue().seen!=generation){release(e.getKey(),e.getValue());it.remove();}
++        }
++    }
++    private void scan(View v,View page,int depth){
++        if(++nodes>1600 || depth>40)return;
++        if(names.apply(v).equals("clips_pause_and_mute_component") && v instanceof ViewGroup){
++            boolean pause=false,mute=false;ViewGroup group=(ViewGroup)v;
++            for(int i=0;i<group.getChildCount();i++){
++                String role=names.apply(group.getChildAt(i));pause|=role.equals("clips_pause_button");mute|=role.equals("clips_mute_button");
++            }
++            if(pause && mute && supported.test(v.getForeground())){
++                State s=states.get(v);if(s==null){s=new State();states.put(v,s);}
++                s.seen=generation;s.page=new WeakReference<>(page);
++            }
++        }
++        if(v instanceof ViewGroup){ViewGroup group=(ViewGroup)v;for(int i=0;i<group.getChildCount();i++)scan(group.getChildAt(i),page,depth+1);}
++    }
++    void frame(View viewer,RectF viewport,View boundary,boolean enabled,FoldReelsClipping clipping){
++        for(Map.Entry<View,State> e:states.entrySet()){
++            View v=e.getKey();State s=e.getValue();View page=s.page.get();Drawable d=v.getForeground();
++            if(s.drawable.get()!=d)release(v,s);
++            if(!enabled || !v.isAttachedToWindow() || page==null || !page.isAttachedToWindow()
++                    || !FoldReelsViews.descendant(v,viewer) || !FoldReelsViews.unitParents(v,boundary) || !supported.test(d)){
++                release(v,s);continue;
++            }
++            float offset=FoldReelsViews.pageOffset(page,viewer,viewport.height(),work,matrix);
++            if(!Float.isFinite(offset)) {release(v,s);continue;}
++            matrix.reset();v.transformMatrixToGlobal(matrix);if(!matrix.invert(inverse)){release(v,s);continue;}
++            target.set(viewport);target.offset(0,offset);inverse.mapRect(target);
++            Plan p=drawing.get(d);
++            if(p==null || p.host.get()!=v){p=new Plan(v);drawing.put(d,p);s.drawable=new WeakReference<>(d);}
++            if(!p.target.equals(target)){p.target.set(target);v.invalidate();}
++            clipping.openPath(v,boundary);
++        }
++    }
++    static boolean draw(Drawable d,Canvas canvas){
++        if(Boolean.TRUE.equals(forwarding.get()))return false;
++        Plan p=valid(d);Rect b=d.getBounds();
++        if(p==null || b.isEmpty() || p.target.isEmpty())return false;
++        int saved=canvas.save();forwarding.set(true);
++        try{
++            canvas.clipRect(p.target);canvas.translate(p.target.left,p.target.top);
++            canvas.scale(p.target.width()/b.width(),p.target.height()/b.height());canvas.translate(-b.left,-b.top);
++            d.draw(canvas); // Re-entry invokes the ORIGINAL ColorDrawable.draw once.
++            return true;
++        }finally{canvas.restoreToCount(saved);forwarding.remove();}
++    }
++    static Rect dirty(Drawable d){
++        Plan p=valid(d);if(p==null)return null;
++        Rect result=new Rect();p.target.roundOut(result);result.union(d.getBounds());return result;
++    }
++    private static Plan valid(Drawable d){
++        Plan p=drawing.get(d);View v=p==null?null:p.host.get();
++        return v!=null && v.isAttachedToWindow() && v.getForeground()==d && d.getCallback()==v?p:null;
++    }
++    void restore(){for(Map.Entry<View,State> e:states.entrySet())release(e.getKey(),e.getValue());states.clear();}
++    private void release(View v,State s){Drawable d=s.drawable.get();if(d!=null){Plan p=drawing.get(d);if(p!=null && p.host.get()==v){drawing.remove(d);v.invalidate();}}s.drawable.clear();}
++    void diagnostics(StringBuilder out){
++        out.append("pauseShade candidates=").append(states.size()).append('\n');
++        for(Map.Entry<View,State> e:states.entrySet()){
++            Drawable d=e.getValue().drawable.get();Plan p=d==null?null:valid(d);
++            out.append("pauseShade ").append(FoldReelsDiagnostics.id(e.getKey())).append(" applied=").append(p!=null)
++                    .append(" localTarget=").append(p==null?"none":p.target).append('\n');
++        }
++    }
++    private static final class State {int seen;WeakReference<View> page=new WeakReference<>(null);WeakReference<Drawable> drawable=new WeakReference<>(null);}
++    private static final class Plan {final WeakReference<View> host;final RectF target=new RectF();Plan(View host){this.host=new WeakReference<>(host);}}
++}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPolicy.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPolicy.java
 new file mode 100644
 index 00000000..d8b642fc
@@ -3157,10 +3285,10 @@ index 00000000..8d184440
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgress.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgress.java
 new file mode 100644
-index 00000000..b10a9b95
+index 00000000..ce4d03a2
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgress.java
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,182 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -3238,7 +3366,9 @@ index 00000000..b10a9b95
 +                    || !FoldReelsViews.unitParents(v, boundary) || !(v.getParent() instanceof View)) {
 +                s.restore(v); controls.progressTarget(v,false); continue;
 +            }
-+            s.captureChanges(v);
++            // Resolve Android's implicit centre pivot before capturing the native
++            // baseline; getPivotX alone can still return zero on a fresh layout.
++            v.getMatrix(); s.captureChanges(v);
 +            View parent=(View)v.getParent(); FoldReelsViews.bounds(parent, box, matrix);
 +            float nativeLeft=box.left+v.getLeft()-parent.getScrollX()+s.x;
 +            float nativeTop=box.top+v.getTop()-parent.getScrollY()+s.y;
@@ -3247,7 +3377,7 @@ index 00000000..b10a9b95
 +            s.ax=s.x+viewport.left+8*density-nativeLeft;
 +            s.ay=s.y+baseCentre-v.getHeight()/2f+offset-nativeTop;
 +            s.as=width/v.getWidth();
-+            if(v.getPivotX()!=0)v.setPivotX(0);
++            v.setPivotX(0);
 +            if(Math.abs(v.getScaleX()-s.as)>.001f)v.setScaleX(s.as);
 +            if(Math.abs(v.getTranslationX()-s.ax)>.01f)v.setTranslationX(s.ax);
 +            if(Math.abs(v.getTranslationY()-s.ay)>.01f)v.setTranslationY(s.ay);
@@ -3293,6 +3423,13 @@ index 00000000..b10a9b95
 +        int applied=0;for(State s:states.values())if(s.applied)applied++;
 +        out.append("progress native=").append(states.size()).append(" applied=").append(applied)
 +                .append(" proxy=").append(hit!=null).append(" metadataBottom=").append(metadataBottom).append('\n');
++        for(Map.Entry<View,State> e:states.entrySet()){
++            FoldReelsViews.bounds(e.getKey(),box,matrix);
++            out.append("scrubber ").append(FoldReelsDiagnostics.id(e.getKey())).append(" page=").append(FoldReelsDiagnostics.id(e.getValue().page.get()))
++                    .append(" applied=").append(e.getValue().applied).append(" global=").append(box)
++                    .append(" local=").append(e.getKey().getTranslationX()).append(',').append(e.getKey().getTranslationY())
++                    .append(" scale=").append(e.getKey().getScaleX()).append(',').append(e.getKey().getScaleY()).append('\n');
++        }
 +        if(hit!=null){FoldReelsViews.bounds(hit,box,matrix);out.append("progress touchStrip=").append(box).append('\n');}
 +    }
 +    private void removeHit() { if(hit!=null && hit.getParent() instanceof ViewGroup)((ViewGroup)hit.getParent()).removeView(hit);hit=null; }
@@ -3336,10 +3473,10 @@ index 00000000..b10a9b95
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRenderer.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRenderer.java
 new file mode 100644
-index 00000000..a1d8d260
+index 00000000..81f18b3b
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRenderer.java
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,285 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -3421,10 +3558,18 @@ index 00000000..a1d8d260
 +    }
 +    void diagnostics(StringBuilder out) {
 +        out.append("renderer ").append(status()).append('\n');
++        trace(out);
++    }
++    void trace(StringBuilder out) {
 +        for (Map.Entry<View, SurfaceState> entry : states.entrySet()) {
 +            out.append("player ").append(FoldReelsDiagnostics.id(entry.getKey()))
 +                    .append(" page=").append(FoldReelsDiagnostics.id(entry.getValue().page.get()))
-+                    .append(" target=").append(entry.getValue().target).append('\n');
++                    .append(" target=").append(entry.getValue().target)
++                    .append(" size=").append(entry.getKey().getWidth()).append('x').append(entry.getKey().getHeight())
++                    .append(" pageHeight=").append(entry.getValue().page.get()==null?0:entry.getValue().page.get().getHeight())
++                    .append(" local=").append(entry.getKey().getTranslationX()).append(',').append(entry.getKey().getTranslationY())
++                    .append(" scale=").append(entry.getKey().getScaleX()).append(',').append(entry.getKey().getScaleY())
++                    .append(" clip=").append(entry.getKey().getClipBounds()).append('\n');
 +        }
 +    }
 +
@@ -3991,6 +4136,78 @@ index 00000000..32cb146d
 +        @Override public void scheduleDrawable(Drawable who, Runnable what, long when) { scheduleSelf(what, when); }
 +        @Override public void unscheduleDrawable(Drawable who, Runnable what) { unscheduleSelf(what); }
 +    }
++}
+diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsTrace.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsTrace.java
+new file mode 100644
+index 00000000..cde7d346
+--- /dev/null
++++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsTrace.java
+@@ -0,0 +1,66 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.morphe.extension.instagram.patches.reels;
++
++import android.app.Application;
++import android.content.BroadcastReceiver;
++import android.content.Context;
++import android.content.Intent;
++import android.content.IntentFilter;
++import android.os.Build;
++import android.os.SystemClock;
++import android.util.Log;
++import java.lang.ref.WeakReference;
++import java.util.ArrayDeque;
++import java.util.ArrayList;
++
++/** Explicit, bounded Lab-only geometry recording. No text/media/account data.
++ * Shell requires DUMP permission; production Piko never registers this receiver. */
++final class FoldReelsTrace {
++    static final String ACTION="app.patchinsta.LAB_TRACE",TAG="PatchInstaScroll";
++    private static final ArrayDeque<String> frames=new ArrayDeque<>();
++    private static WeakReference<Application> owner=new WeakReference<>(null);
++    private static BroadcastReceiver receiver;
++    private static boolean armed;
++    private static String session="",last="";
++    private static int sequence;
++    static void register(Application app){
++        if(!app.getPackageName().equals("com.instagram.android.patchinstalab") || receiver!=null)return;
++        receiver=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent intent){
++            if(!ACTION.equals(intent.getAction()))return;
++            if("start".equals(intent.getStringExtra("mode")))begin();
++            else if("dump".equals(intent.getStringExtra("mode")))dump();
++        }};
++        IntentFilter filter=new IntentFilter(ACTION);
++        if(Build.VERSION.SDK_INT>=33)app.registerReceiver(receiver,filter,"android.permission.DUMP",null,Context.RECEIVER_EXPORTED);
++        else app.registerReceiver(receiver,filter,"android.permission.DUMP",null);
++        owner=new WeakReference<>(app);
++    }
++    static void begin(){
++        frames.clear();last="";sequence=0;session=Long.toHexString(SystemClock.uptimeMillis());armed=true;
++        Log.i(TAG,"BEGIN|"+session);
++    }
++    static void capture(FoldReels.Watcher.Tracker t){
++        if(!armed || !t.active || !t.recognized)return;
++        StringBuilder out=new StringBuilder(2048);
++        out.append("viewport=").append(t.lastViewport).append('\n');t.renderer.trace(out);
++        t.controls.diagnostics(out);t.progress.diagnostics(out);t.metadata.diagnostics(out);t.pauseShade.diagnostics(out);
++        String snapshot=out.toString();if(snapshot.equals(last))return;last=snapshot;
++        if(frames.size()==1200)frames.removeFirst();
++        frames.addLast((++sequence)+"|"+SystemClock.uptimeMillis()+"\n"+snapshot);
++    }
++    static void dump(){
++        armed=false;ArrayList<String> saved=new ArrayList<>(frames);String run=session;
++        Thread worker=new Thread(()->{
++            Log.i(TAG,"DUMP|"+run+"|"+saved.size());
++            for(String frame:saved){int split=frame.indexOf('\n');String prefix=run+"|"+frame.substring(0,split)+"|";
++                for(String line:frame.substring(split+1).split("\n"))Log.i(TAG,prefix+line);
++            }
++            Log.i(TAG,"END|"+run);
++        },"PatchInsta-Lab-geometry");worker.setPriority(Thread.MIN_PRIORITY);worker.start();
++    }
++    static void reset(){
++        armed=false;frames.clear();last="";Application app=owner.get();
++        if(app!=null && receiver!=null)app.unregisterReceiver(receiver);owner.clear();receiver=null;
++    }
++    private FoldReelsTrace(){}
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsViewport.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsViewport.java
 new file mode 100644
@@ -5312,6 +5529,90 @@ index 00000000..376282d1
 +        catch(IllegalStateException expected){assertTrue(expected.getMessage().contains("measured height"));}
 +    }
 +}
+diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPauseShadeTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPauseShadeTest.java
+new file mode 100644
+index 00000000..8bbb46c4
+--- /dev/null
++++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPauseShadeTest.java
+@@ -0,0 +1,78 @@
++package app.morphe.extension.instagram.patches.reels;
++
++import android.graphics.Bitmap;
++import android.graphics.Canvas;
++import android.graphics.Color;
++import android.graphics.Rect;
++import android.graphics.RectF;
++import android.graphics.drawable.ColorDrawable;
++import android.view.View;
++import android.widget.FrameLayout;
++import org.junit.After;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.RobolectricTestRunner;
++import org.robolectric.annotation.Config;
++import org.robolectric.annotation.GraphicsMode;
++import static org.junit.Assert.*;
++
++@RunWith(RobolectricTestRunner.class)
++@Config(sdk=29,manifest=Config.NONE,qualifiers="w1000dp-h1600dp-mdpi")
++@GraphicsMode(GraphicsMode.Mode.NATIVE)
++public class FoldReelsPauseShadeTest extends FoldReelsTestFixture {
++    final FoldReelsPauseShade shade=new FoldReelsPauseShade(FoldReelsTestFixture::name,d->d instanceof NativeDim);
++    FrameLayout overlay;NativeDim nativeDim;
++    void setupShade(){
++        viewer.layout(0,0,1000,1600);
++        for(int i=0;i<3;i++)pages.get(i).layout(0,(i-1)*1600,1000,i*1600);
++        overlay=new FrameLayout(activity);overlay.setTag("clips_pause_and_mute_component");
++        add(pages.get(1),overlay,106,70,788,1260);
++        View pause=new View(activity);pause.setTag("clips_pause_button");add(overlay,pause,300,500,48,48);
++        View mute=new View(activity);mute.setTag("clips_mute_button");add(overlay,mute,300,400,48,48);
++        nativeDim=new NativeDim(0x44000000);overlay.setForeground(nativeDim);
++        renderer.discover(viewer);shade.discover(renderer,viewer);
++    }
++    void apply(boolean enabled){clipping.beginFrame();shade.frame(viewer,fullViewport(),content,enabled,clipping);clipping.endFrame();}
++    Bitmap drawing(){for(View v:videos)v.setVisibility(View.INVISIBLE);content.setBackgroundColor(Color.WHITE);
++        Bitmap b=Bitmap.createBitmap(1000,1600,Bitmap.Config.ARGB_8888);content.draw(new Canvas(b));return b;}
++    int nativePixel(){Bitmap b=Bitmap.createBitmap(1,1,Bitmap.Config.ARGB_8888);Canvas c=new Canvas(b);c.drawColor(Color.WHITE);
++        ColorDrawable d=new ColorDrawable(nativeDim.getColor());d.setColorFilter(nativeDim.getColorFilter());d.setBounds(0,0,1,1);d.draw(c);return b.getPixel(0,0);}
++    @After public void release(){shade.restore();}
++    @Test public void nativePauseDimCoversTheFramedViewportWithoutResizingItsButtons(){
++        setupShade();RectF pause=bounds(overlay.getChildAt(0));apply(true);Bitmap b=drawing();
++        for(int[] point:new int[][]{{5,5},{950,1500},{50,1000},{500,800}})assertEquals(nativePixel(),b.getPixel(point[0],point[1]));
++        assertEquals(pause,bounds(overlay.getChildAt(0)));assertSame(nativeDim,overlay.getForeground());assertSame(overlay,nativeDim.getCallback());
++        assertEquals(new Rect(0,0,788,1260),nativeDim.getBounds());assertEquals(1,nativeDim.nativeDraws);
++        assertTrue(nativeDim.getDirtyBounds().left<0);assertTrue(nativeDim.getDirtyBounds().right>788);
++    }
++    @Test public void nativeColourAndAlphaUpdatesDrawLiveWithoutReplacingTheForeground(){
++        setupShade();apply(true);drawing();nativeDim.setColor(0x55000000);nativeDim.setAlpha(100);Bitmap b=drawing();
++        assertEquals(nativePixel(),b.getPixel(950,1500));assertSame(nativeDim,overlay.getForeground());
++        nativeDim.setColor(Color.TRANSPARENT);assertEquals(Color.WHITE,drawing().getPixel(950,1500));
++    }
++    @Test public void restoringLeavesTheOriginalDimGeometryAndNativeInstanceIntact(){
++        setupShade();apply(true);drawing();apply(false);Bitmap b=drawing();
++        assertEquals(Color.WHITE,b.getPixel(950,1500));assertEquals(nativePixel(),b.getPixel(500,800));
++        assertSame(nativeDim,overlay.getForeground());assertSame(overlay,nativeDim.getCallback());assertEquals(1,overlay.getScaleX(),.001f);
++    }
++    @Test public void shadeFollowsTheNativeCardWithoutChangingItsLocalDamageRect(){
++        setupShade();apply(true);drawing();Rect local=nativeDim.getDirtyBounds();
++        for(float f:new float[]{.1f,.3f,.5f,.7f,.9f,.3f,0,-.1f,-.3f,-.5f,-.9f,0}){
++            for(int i=0;i<3;i++){int y=Math.round((i-1-f)*1600);pages.get(i).layout(0,y,1000,y+1600);}
++            apply(true);assertEquals(local,nativeDim.getDirtyBounds());assertEquals(0,overlay.getTranslationY(),.001f);
++        }
++    }
++    @Test public void unrelatedForegroundAndNativeRebindingAreNeverOverwritten(){
++        setupShade();apply(true);drawing();ColorDrawable replacement=new ColorDrawable(Color.RED);overlay.setForeground(replacement);apply(true);
++        assertSame(replacement,overlay.getForeground());shade.restore();assertSame(replacement,overlay.getForeground());
++        FrameLayout sheet=new FrameLayout(activity);sheet.setTag("comments_scrim");NativeDim dim=new NativeDim(0x44000000);
++        sheet.setForeground(dim);add(pages.get(1),sheet,106,70,788,1260);shade.discover(renderer,viewer);apply(true);drawing();
++        assertEquals(dim.getBounds(),dim.getDirtyBounds());assertEquals(1,dim.nativeDraws);
++    }
++    /** Exactly the native bytecode draw/dirty trampoline, delegating paint to Android. */
++    static final class NativeDim extends ColorDrawable {
++        int nativeDraws;NativeDim(int colour){super(colour);}
++        @Override public void draw(Canvas c){if(FoldReels.drawPauseShade(this,c))return;nativeDraws++;super.draw(c);}
++        @Override public Rect getDirtyBounds(){Rect r=FoldReels.pauseShadeDirty(this);return r==null?super.getDirtyBounds():r;}
++    }
++}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPosterTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPosterTest.java
 new file mode 100644
 index 00000000..a371c02b
@@ -5864,10 +6165,10 @@ index 00000000..534cb828
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
 new file mode 100644
-index 00000000..723641a3
+index 00000000..287bcbe2
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
-@@ -0,0 +1,175 @@
+@@ -0,0 +1,181 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -5976,10 +6277,16 @@ index 00000000..723641a3
 +        assertEquals(Arrays.asList(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP), viewer.nativeActions);
 +    }
 +    @Test public void aDistantUpWithoutMoveCannotBecomeAnAccidentalCommentClick() {
-+        FrameLayout rail=rail();AtomicInteger clicks=new AtomicInteger();rail.getChildAt(1).setOnClickListener(v->clicks.incrementAndGet());
++        FrameLayout rail=rail();AtomicInteger clicks=new AtomicInteger(),nativeTaps=new AtomicInteger();rail.getChildAt(1).setOnClickListener(v->clicks.incrementAndGet());
++        android.view.GestureDetector detector=new android.view.GestureDetector(activity,new android.view.GestureDetector.SimpleOnGestureListener(){
++            @Override public boolean onDown(MotionEvent e){return true;}
++            @Override public boolean onSingleTapUp(MotionEvent e){nativeTaps.incrementAndGet();return true;}
++        });
++        View nativeTarget=new View(activity);nativeTarget.setOnTouchListener((v,e)->detector.onTouchEvent(e));
++        viewer.addView(nativeTarget,0,new FrameLayout.LayoutParams(1000,1400));nativeTarget.layout(0,0,1000,1400);
 +        controls.discover(viewer);controlFrame(false,true);float[] p=localCentre(rail.getChildAt(1));
 +        send(MotionEvent.ACTION_DOWN,p[0],p[1]);send(MotionEvent.ACTION_UP,p[0],p[1]-120);
-+        assertEquals(0,clicks.get());assertEquals(Arrays.asList(MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP),viewer.nativeActions);
++        assertEquals(0,clicks.get());assertEquals(0,nativeTaps.get());assertEquals(Arrays.asList(MotionEvent.ACTION_DOWN,MotionEvent.ACTION_MOVE,MotionEvent.ACTION_UP),viewer.nativeActions);
 +    }
 +    @Test public void aNativeSheetInsideTheViewerHasPriorityOverMovedControls() {
 +        FrameLayout rail = rail(); AtomicInteger comments = new AtomicInteger(), sheetClicks = new AtomicInteger();
@@ -6726,10 +7033,10 @@ index 4a17b306..73802826 100644
  
 diff --git a/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
 new file mode 100644
-index 00000000..d7f50f6c
+index 00000000..b612a7af
 --- /dev/null
 +++ b/patches/src/main/kotlin/app/crimera/patches/instagram/misc/reels/AdaptiveFoldReelsPatch.kt
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,162 @@
 +/*
 + * Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE.
 + */
@@ -6819,6 +7126,45 @@ index 00000000..d7f50f6c
 +        measure.addInstruction(0,
 +            "invoke-static/range {p0 .. p2}, Lapp/morphe/extension/instagram/patches/reels/FoldReels;->measurePager(Landroid/view/View;II)I")
 +        measure.addInstruction(1, "move-result p2")
++        // Pinned native pause foreground, verified as a plain ColorDrawable.
++        // Keep the original instance/callback/animation and remap its draw only.
++        val shade = mutableClassDefBy("LX/01Qh;")
++        check(shade.superclass == "Landroid/graphics/drawable/ColorDrawable;" && shade.methods.none { it.name == "draw" }) {
++            "Pinned pause ColorDrawable shape changed"
++        }
++        val shadeBody = MethodImplementationBuilder(3).apply {
++            addInstruction("invoke-super/range {v1 .. v2}, Landroid/graphics/drawable/ColorDrawable;->draw(Landroid/graphics/Canvas;)V".toInstruction())
++            addInstruction("return-void".toInstruction())
++        }.methodImplementation
++        val shadeDraw=MutableMethod(ImmutableMethod(shade.type,"draw",
++            listOf(ImmutableMethodParameter("Landroid/graphics/Canvas;",emptySet(),null)),
++            "V",AccessFlags.PUBLIC.value,emptySet(),emptySet(),shadeBody))
++        shadeDraw.addInstructionsWithLabels(0,"""
++            invoke-static/range {p0 .. p1}, Lapp/morphe/extension/instagram/patches/reels/FoldReels;->drawPauseShade(Landroid/graphics/drawable/Drawable;Landroid/graphics/Canvas;)Z
++            move-result v0
++            if-eqz v0, :fold_pause_native
++            return-void
++            :fold_pause_native
++            nop
++        """)
++        shade.methods.add(shadeDraw)
++        check(shade.methods.none { it.name == "getDirtyBounds" }) { "Pinned pause damage boundary changed" }
++        val dirtyBody=MethodImplementationBuilder(2).apply {
++            addInstruction("invoke-super {v1}, Landroid/graphics/drawable/ColorDrawable;->getDirtyBounds()Landroid/graphics/Rect;".toInstruction())
++            addInstruction("move-result-object v0".toInstruction())
++            addInstruction("return-object v0".toInstruction())
++        }.methodImplementation
++        val dirty=MutableMethod(ImmutableMethod(shade.type,"getDirtyBounds",emptyList(),"Landroid/graphics/Rect;",
++            AccessFlags.PUBLIC.value,emptySet(),emptySet(),dirtyBody))
++        dirty.addInstructionsWithLabels(0,"""
++            invoke-static {p0}, Lapp/morphe/extension/instagram/patches/reels/FoldReels;->pauseShadeDirty(Landroid/graphics/drawable/Drawable;)Landroid/graphics/Rect;
++            move-result-object v0
++            if-eqz v0, :fold_pause_native_damage
++            return-object v0
++            :fold_pause_native_damage
++            nop
++        """)
++        shade.methods.add(dirty)
 +        // Validate and construct a replacement transactionally before changing the class.
 +        // The parent reference is resolved from this APK, not an obfuscated name from another build.
 +        val rounded = mutableClassDefBy(ROUNDED_CARD)

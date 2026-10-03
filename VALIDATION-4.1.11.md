@@ -55,3 +55,11 @@ Pipeline natif : mesure ciblée du ViewPager2 Reels selon la hauteur de viewport
 PC : 305 policy/géométrie, 13 mappings, 24 gardes distribution réussis. Nouvelle suite attendue : 189 scénarios Android ; CI pas encore exécutée. Tests nouveaux couvrent mesure réelle synthétique, premier dessin retardé jusqu'au layout natif, mêmes transforms/clips aux fractions 10/30/50/70/90 et retour dans les deux sens, voisinage, autres pagers/photos, resize et restauration, limite metadata stable, gradient monté stable, montage tardif et UP distant.
 
 Limites : origine du rectangle sombre central encore non prouvée, notamment piste foreground clips_pause_and_mute_component/X.01Qh. Aucun résultat visuel/physique annoncé pour ce nouveau code. CI/APK et vrais gestes externes à faire ; gates intérieurs/paysage et poster-only restent ouverts. L'ancien APK9fe8 reste installé Lab, temporaire externe clean testé puis rendu natif initial restauré.
+
+### Itération suivante — pause native et pivot frais
+
+CI37138442265 sur f80434fd : 187/189 scénarios passent, deux jauges fraîches décalées horizontalement. Cause : lecture du pivot implicite avant évaluation de la matrice Android ; corrigé en évaluant getMatrix avant la capture et en fixant explicitement le pivot de la jauge. Aucun test affaibli.
+
+Fond de pause natif 439 : clips_pause_and_mute_component, deux rôles pause/mute et foreground X.01Qh. Le type a été vérifié dans le base.apk original : ColorDrawable sans draw personnalisé. Remappage ciblé du draw et dirty bounds de ce foreground vers la zone vidéo de sa carte, conservant instance native, callback, alpha/couleur/animations et positions des contrôles. Ce rôle a des anciennes dimensions observées ; son attribution au rectangle intérieur signalé reste à confirmer physiquement. Cinq tests raster/restauration/couleur/native-rebind/stabilité ajoutés ; suite attendue194.
+
+Pour les essais externes, enregistrement géométrique opt-in uniquement Lab via broadcast protégé android.permission.DUMP (shell), tampon borné de1200 états distincts, dump sur thread secondaire. Inactif par défaut, aucun receiver dans Piko normal. Aucun texte/compte/média enregistré. Permet de comparer les transforms locaux et clips réellement appliqués pendant les swipes, en complément du screenrecord privé. Vérification physique de ce nouveau candidat encore entièrement à faire.
