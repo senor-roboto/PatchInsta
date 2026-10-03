@@ -2962,10 +2962,10 @@ index 00000000..66eec68c
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPauseShade.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPauseShade.java
 new file mode 100644
-index 00000000..e4a62666
+index 00000000..3fb1f381
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPauseShade.java
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,112 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -3029,6 +3029,12 @@ index 00000000..e4a62666
 +            if(!Float.isFinite(offset)) {release(v,s);continue;}
 +            matrix.reset();v.transformMatrixToGlobal(matrix);if(!matrix.invert(inverse)){release(v,s);continue;}
 +            target.set(viewport);target.offset(0,offset);inverse.mapRect(target);
++            // Matrix inversion can leave an integral local edge a few float ULPs
++            // below the integer. roundOut would then grow its damage by a pixel
++            // during scrolling. Normalize only that numerical residue, for both
++            // drawing and invalidation; retain actual subpixel coordinates.
++            target.set(stableEdge(target.left),stableEdge(target.top),
++                    stableEdge(target.right),stableEdge(target.bottom));
 +            Plan p=drawing.get(d);
 +            if(p==null || p.host.get()!=v){p=new Plan(v);drawing.put(d,p);s.drawable=new WeakReference<>(d);}
 +            if(!p.target.equals(target)){p.target.set(target);v.invalidate();}
@@ -3046,6 +3052,10 @@ index 00000000..e4a62666
 +            d.draw(canvas); // Re-entry invokes the ORIGINAL ColorDrawable.draw once.
 +            return true;
 +        }finally{canvas.restoreToCount(saved);forwarding.remove();}
++    }
++    private static float stableEdge(float value){
++        float integer=Math.round(value);
++        return Math.abs(value-integer)<=32*Math.ulp(value)?integer:value;
 +    }
 +    static Rect dirty(Drawable d){
 +        Plan p=valid(d);if(p==null)return null;
