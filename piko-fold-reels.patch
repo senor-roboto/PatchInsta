@@ -104,10 +104,10 @@ index 00000000..366f5395
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
 new file mode 100644
-index 00000000..597e0c9d
+index 00000000..27f0ccda
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
-@@ -0,0 +1,672 @@
+@@ -0,0 +1,675 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -646,6 +646,9 @@ index 00000000..597e0c9d
 +                boolean typing = focus != null && focus.onCheckIsTextEditor();
 +                if (Build.VERSION.SDK_INT >= 30 && insets != null) typing |= insets.isVisible(WindowInsets.Type.ime());
 +                if (typing) { stopPresentation(); reason = "text-input"; return; }
++                // A guarded sizing failure must stay stable. Applying immersive
++                // bars before restoring them on every frame causes a relayout loop.
++                if (failures.containsKey("pager")) { stopPresentation(); reason="native-pager-sizing-error"; return; }
 +                foreground = new WeakReference<>(a); kind = windowKind;
 +                if (currentViewer.get() != viewer) { stopPresentation(); currentViewer = new WeakReference<>(viewer); }
 +                active = true; reason = "active";
@@ -2891,10 +2894,10 @@ index 00000000..51144eb8
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPager.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPager.java
 new file mode 100644
-index 00000000..66eec68c
+index 00000000..23be1240
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsPager.java
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,78 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2924,16 +2927,29 @@ index 00000000..66eec68c
 +        if (!enabled || next == null || viewport.isEmpty()) { restore(); return true; }
 +        int wanted = Math.round(viewport.height());
 +        Plan p = measurements.get(next);
-+        if (p == null && next.getHeight() == wanted) return true;
++        View strip=next instanceof ViewGroup && ((ViewGroup)next).getChildCount()==1
++                ? ((ViewGroup)next).getChildAt(0):null;
++        int pageHeight=wanted-next.getPaddingTop()-next.getPaddingBottom();
++        if (p == null && next.getMeasuredHeight() == wanted && stripReady(strip,pageHeight)) return true;
 +        if (p == null || p.height != wanted) {
 +            if (p == null) { p = new Plan(); measurements.put(next, p); }
 +            p.height = wanted; waits = 0; changes++; next.requestLayout();
 +        }
-+        if (next.getHeight() == wanted && next.getMeasuredHeight() == wanted) { waits = 0; return true; }
++        // SwipeRefreshLayout can retain the pager host's original layout height.
++        // Native ViewPager2 nevertheless lays its RecyclerView using the child's
++        // measured size (Gravity.TOP); that child defines getPageSize and stride.
++        // Wait for the actual native scrolling strip, not the unused host bounds.
++        if (next.getMeasuredHeight() == wanted && stripReady(strip,pageHeight)) { waits = 0; return true; }
 +        // Let Android measure/layout its adapter before painting an old-sized page.
 +        // A missing bytecode hook fails boundedly, rather than freezing the window.
-+        if (++waits > 4) throw new IllegalStateException("Native Reels pager did not accept its measured height");
++        if (++waits > 4) throw new IllegalStateException("Native Reels pager did not accept its measured height: target="
++                +wanted+" measured="+next.getMeasuredHeight()+" host="+next.getHeight()
++                +" strip="+(strip==null?"missing":strip.getMeasuredHeight()+"/"+strip.getHeight()));
 +        return false;
++    }
++    private static boolean stripReady(View strip,int height){
++        return strip!=null && FoldReelsViews.pagerContainer(strip)
++                && strip.getMeasuredHeight()==height && strip.getHeight()==height;
 +    }
 +    private View find(View v, int depth) {
 +        if (depth > 2) return null;
@@ -5443,10 +5459,10 @@ index 00000000..d3ec2308
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPagerTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPagerTest.java
 new file mode 100644
-index 00000000..376282d1
+index 00000000..67dee9c4
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPagerTest.java
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,102 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.RectF;
@@ -5537,6 +5553,16 @@ index 00000000..376282d1
 +        setupPager();for(int i=0;i<4;i++)assertFalse(sizing.prepare(viewer,fullViewport(),true));
 +        try{sizing.prepare(viewer,fullViewport(),true);fail("An unpatched native pager must be reported");}
 +        catch(IllegalStateException expected){assertTrue(expected.getMessage().contains("measured height"));}
++    }
++    @Test public void nativeStripDefinesStrideEvenWhenItsParentClampsThePagerHost(){
++        setupPager();assertFalse(sizing.prepare(viewer,fullViewport(),true));
++        nativePager.measure(View.MeasureSpec.makeMeasureSpec(1000,View.MeasureSpec.EXACTLY),
++                View.MeasureSpec.makeMeasureSpec(1400,View.MeasureSpec.EXACTLY));
++        nativePager.layout(0,0,1000,1400); // Real SwipeRefresh host keeps these bounds.
++        assertEquals(1400,nativePager.getHeight());
++        assertEquals(1600,nativePager.strip.getHeight());
++        assertTrue(sizing.prepare(viewer,fullViewport(),true));
++        for(View page:pages)assertEquals(1600,page.getHeight());
 +    }
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPauseShadeTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPauseShadeTest.java
