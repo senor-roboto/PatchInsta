@@ -104,10 +104,10 @@ index 00000000..366f5395
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
 new file mode 100644
-index 00000000..43073618
+index 00000000..3fefe7cb
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
-@@ -0,0 +1,644 @@
+@@ -0,0 +1,645 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -154,6 +154,7 @@ index 00000000..43073618
 +
 +/** Live presentation of the existing player. Folding and framing never recreate an Activity. */
 +public final class FoldReels {
++    private static final String DIAGNOSTIC_TITLE = "PatchInsta 4.1.11";
 +    private static volatile boolean installed;
 +    private static volatile FoldReelsPolicy.WindowKind kind = FoldReelsPolicy.WindowKind.UNKNOWN;
 +    static final Watcher watcher = new Watcher();
@@ -411,7 +412,7 @@ index 00000000..43073618
 +
 +    private static void showDiagnostic(Activity activity) {
 +        Watcher.Tracker tracker = watcher.trackers.get(activity);
-+        final String report = tracker == null ? "PatchInsta 4.1.10\ntracker=none\n"
++        final String report = tracker == null ? DIAGNOSTIC_TITLE + "\ntracker=none\n"
 +                : tracker.diagnosticSnapshot != null ? tracker.diagnosticSnapshot : tracker.buildDiagnostic("after-dialog; NOT a live fullscreen snapshot");
 +        TextView text = new TextView(activity); text.setText(report); text.setTextIsSelectable(true);
 +        text.setTextSize(11); text.setPadding(dp(activity, 16), 0, dp(activity, 16), 0);
@@ -515,11 +516,11 @@ index 00000000..43073618
 +                // Invoked before the FIRST settings dialog takes focus. Never rebuild a
 +                // "live" report from the restored/empty state underneath that dialog.
 +                try { diagnosticSnapshot = buildDiagnostic("before-layout-menu"); }
-+                catch (RuntimeException error) { diagnosticSnapshot = "PatchInsta 4.1.10\ndiagnostic failed=" + error.getClass().getName(); }
++                catch (RuntimeException error) { diagnosticSnapshot = DIAGNOSTIC_TITLE + "\ndiagnostic failed=" + error.getClass().getName(); }
 +            }
 +            String buildDiagnostic(String phase) {
 +                Activity a = owner.get();
-+                StringBuilder out = new StringBuilder("PatchInsta 4.1.10\ncapture=").append(phase)
++                StringBuilder out = new StringBuilder(DIAGNOSTIC_TITLE + "\ncapture=").append(phase)
 +                        .append(" uptimeMs=").append(SystemClock.uptimeMillis()).append('\n');
 +                out.append("installed=").append(installed).append(" nativePolicy=").append(noTwoPane ? "no_two_pane" : "v4").append('\n');
 +                diagnostics(out);
@@ -744,7 +745,7 @@ index 00000000..43073618
 +                out.append("profile crop=").append(p.crop).append(" zoom=").append(p.zoom).append(" actions=").append(p.actions)
 +                        .append(" hideHeader=").append(prefs.hideHeader(windowKind == FoldReelsPolicy.WindowKind.WIDE)).append(" metadata=").append(p.metadata).append(" card=").append(p.card).append(" shortcut=").append(p.shortcut).append('\n');
 +                spaces.diagnostics(out);
-+                renderer.diagnostics(out); controls.diagnostics(out); card.diagnostics(out); metadata.diagnostics(out); scrim.diagnostics(out); header.diagnostics(out);
++                renderer.diagnostics(out); controls.diagnostics(out); progress.diagnostics(out); card.diagnostics(out); metadata.diagnostics(out); scrim.diagnostics(out); header.diagnostics(out);
 +                out.append("chrome ").append(chrome.status()).append('\n');
 +            }
 +            @Override public void onConfigurationChanged(Configuration config) { capture(); markDiscovery(); requestFrame(); }
@@ -1983,10 +1984,10 @@ index 00000000..e36fca79
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsHeader.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsHeader.java
 new file mode 100644
-index 00000000..075f61d8
+index 00000000..b027fdf2
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsHeader.java
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,119 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -2066,7 +2067,7 @@ index 00000000..075f61d8
 +        if (!hideHeader) hidden.restore();
 +        hidden.begin();
 +        bottom=0;FoldReelsViews.bounds(viewer,root,matrix);
-+        float target=Math.max(root.top,viewport.top)+8*viewer.getResources().getDisplayMetrics().density;
++        float safeTop=Math.max(root.top,viewport.top);
 +        for(Iterator<Map.Entry<View,State>> it=states.entrySet().iterator();it.hasNext();){
 +            Map.Entry<View,State> e=it.next();View v=e.getKey();State s=e.getValue();
 +            if(!v.isAttachedToWindow()){release(v,s);it.remove();continue;}
@@ -2074,6 +2075,12 @@ index 00000000..075f61d8
 +                s.restore(v); hidden.hide(v); continue;
 +            }
 +            if(!enabled || v.getVisibility()!=View.VISIBLE || !FoldReelsViews.unitParents(v,boundary)){s.restore(v);continue;}
++            // The verified native action bar owns its top contrast drawable as well
++            // as its controls. Moving the whole bar down leaves an uncovered band
++            // below the status bar. Preserve its native internal control spacing.
++            boolean nativeActionBar=names.apply(v).equals("clips_viewer_action_bar")
++                    && FoldReelsViews.classIs(v,"instagram.features.clips.viewer.actionbar.ClipsViewerActionBar");
++            float target=safeTop+(nativeActionBar?0:8*viewer.getResources().getDisplayMetrics().density);
 +            s.capture(v);FoldReelsViews.bounds(v,bounds,matrix);
 +            // Use the actual current global bounds: ancestor and local native animations
 +            // are accounted for, without accumulating a per-Reel page displacement.
@@ -3059,10 +3066,10 @@ index 00000000..8d184440
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgress.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgress.java
 new file mode 100644
-index 00000000..222796ee
+index 00000000..769c241c
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgress.java
-@@ -0,0 +1,137 @@
+@@ -0,0 +1,144 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -3117,11 +3124,12 @@ index 00000000..222796ee
 +        metadataBottom = Float.NaN;
 +        View selected = null;
 +        float density = viewer.getResources().getDisplayMetrics().density;
-+        // Keep the complete 48 dp touch strip away from Android's bottom gesture region.
-+        // This also places the compact-screen DOWN inside the native viewer, not below it.
-+        float margin = 48*density;
++        // Reserve a 48 dp downward paging motion below the complete 48 dp touch
++        // strip, not just a safe DOWN point. Otherwise a short downward drag from
++        // the bar reaches Samsung's bottom gesture region and enables one-hand mode.
++        float margin = 96*density;
 +        android.view.WindowInsets insets = boundary == null ? null : boundary.getRootWindowInsets();
-+        if (insets != null) margin = Math.max(margin, insets.getMandatorySystemGestureInsets().bottom + 28*density);
++        if (insets != null) margin = Math.max(margin, insets.getMandatorySystemGestureInsets().bottom + 76*density);
 +        for (Map.Entry<View, State> e : states.entrySet()) {
 +            View v=e.getKey(); State s=e.getValue(); View page=s.page.get();
 +            float offset=page == null ? 0 : FoldReelsViews.pageOffset(page, viewer, viewport.height(), anchor, matrix);
@@ -3165,6 +3173,12 @@ index 00000000..222796ee
 +    void constrainMetadata(RectF interactive) {
 +        if (Float.isFinite(metadataBottom) && metadataBottom > interactive.top)
 +            interactive.bottom = Math.min(interactive.bottom, metadataBottom);
++    }
++    void diagnostics(StringBuilder out) {
++        int applied=0;for(State s:states.values())if(s.applied)applied++;
++        out.append("progress native=").append(states.size()).append(" applied=").append(applied)
++                .append(" proxy=").append(hit!=null).append(" metadataBottom=").append(metadataBottom).append('\n');
++        if(hit!=null){FoldReelsViews.bounds(hit,box,matrix);out.append("progress touchStrip=").append(box).append('\n');}
 +    }
 +    private void removeHit() { if(hit!=null && hit.getParent() instanceof ViewGroup)((ViewGroup)hit.getParent()).removeView(hit);hit=null; }
 +    private static final class State {
@@ -4176,10 +4190,10 @@ index 526d6bde..db3a0c58 100644
      }
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsDrawingTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsDrawingTest.java
 new file mode 100644
-index 00000000..ff5f52dd
+index 00000000..3d76a5fe
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsDrawingTest.java
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,88 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Bitmap;
@@ -4217,6 +4231,33 @@ index 00000000..ff5f52dd
 +        apply();Bitmap bitmap=draw();assertTrue(Color.red(bitmap.getPixel(20,5))<200);assertTrue(Color.red(bitmap.getPixel(980,5))<200);
 +        RectF b=bounds(button),root=bounds(content);assertEquals(Color.GREEN,bitmap.getPixel(Math.round(b.centerX()-root.left),Math.round(b.centerY()-root.top)));
 +        scrim.restore();clipping.restore();Bitmap nativeImage=draw();assertEquals(Color.WHITE,nativeImage.getPixel(20,5));
++    }
++    @Test public void nativeActionBarShapeGradientStartsAtTheSafeViewportTopAndRestores(){
++        viewer.layout(0,110,1000,1510);
++        instagram.features.clips.viewer.actionbar.ClipsViewerActionBar row=
++                new instagram.features.clips.viewer.actionbar.ClipsViewerActionBar(activity);
++        row.setTag("clips_viewer_action_bar");
++        android.graphics.drawable.ShapeDrawable original=new android.graphics.drawable.ShapeDrawable(
++                new android.graphics.drawable.shapes.RectShape());
++        original.getPaint().setShader(new android.graphics.LinearGradient(0,0,0,56,
++                0xAA000000,Color.TRANSPARENT,android.graphics.Shader.TileMode.CLAMP));
++        row.setBackground(original);add(content,row,0,110,1000,56);
++        View button=new View(activity);button.setBackgroundColor(Color.GREEN);button.setClickable(true);
++        add(row,button,40,16,60,24);
++        FoldReelsHeader header=new FoldReelsHeader(FoldReelsTestFixture::name);
++        try {
++            renderer.discover(viewer);header.discover(renderer,viewer,content);
++            clipping.beginFrame();header.frame(viewer,bounds(viewer),content,true,clipping);clipping.endFrame();
++            Bitmap bitmap=draw();assertEquals(110,bounds(row).top,.01f);
++            assertEquals(Color.WHITE,bitmap.getPixel(980,109));
++            assertTrue(Color.red(bitmap.getPixel(980,111))<200);
++            assertEquals(Color.GREEN,bitmap.getPixel(70,138));
++            assertSame(original,row.getBackground());assertEquals(1,row.getScaleX(),.001f);
++            row.setTranslationY(-20);row.setAlpha(.3f);
++            header.frame(viewer,bounds(viewer),content,true,clipping);
++            header.frame(viewer,bounds(viewer),content,false,clipping);
++            assertEquals(-20,row.getTranslationY(),.001f);assertEquals(.3f,row.getAlpha(),.001f);
++        } finally {header.restore();}
 +    }
 +    @Test public void bottomForegroundPaintsBelowTheOldCardAndDoesNotLeaveAVerticalSeam(){
 +        FrameLayout row=new FrameLayout(activity);GradientDrawable original=gradient(Color.TRANSPARENT,0xAA000000);original.setCornerRadius(18);original.setStroke(1,Color.RED);
@@ -5366,10 +5407,10 @@ index 00000000..ce72cec1
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgressTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgressTest.java
 new file mode 100644
-index 00000000..c8c8227c
+index 00000000..21fe697b
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgressTest.java
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,110 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.RectF;
@@ -5401,7 +5442,9 @@ index 00000000..c8c8227c
 +        progress.frame(viewer,fullViewport(),content,content,enabled,controls,clipping);clipping.endFrame();}
 +    @After public void release(){progress.restore(controls);}
 +    @Test public void nativeBarFollowsFullWindowWidthAndBottomWhileKeepingItsHeight(){setupBar();apply(true);
-+        RectF b=bounds(scrubber);assertEquals(8,b.left,.01f);assertEquals(992,b.right,.01f);assertEquals(fullViewport().bottom-48,b.bottom,.01f);
++        RectF b=bounds(scrubber);assertEquals(8,b.left,.01f);assertEquals(992,b.right,.01f);assertEquals(fullViewport().bottom-96,b.bottom,.01f);
++        // Even the bottom of its touch strip has room for a 48 dp downward motion.
++        assertTrue(b.centerY()+24+48 < fullViewport().bottom);
 +        assertEquals(28,b.height(),.01f);assertEquals(1,scrubber.getScaleY(),.001f);assertEquals(788,scrubber.getWidth());}
 +    @Test public void restoringNativePresentationRestoresGeometryAndRemovesHitSurface(){setupBar();RectF original=bounds(scrubber);int count=content.getChildCount();apply(true);
 +        assertEquals(count+1,content.getChildCount());apply(false);assertEquals(original,bounds(scrubber));assertEquals(count,content.getChildCount());}
@@ -5411,6 +5454,16 @@ index 00000000..c8c8227c
 +    @Test public void verticalSwipeCancelsSeekingAndReturnsTheFullStreamToThePager(){setupBar();apply(true);RectF b=bounds(scrubber);
 +        globalSend(MotionEvent.ACTION_DOWN,b.centerX(),b.centerY());globalSend(MotionEvent.ACTION_MOVE,b.centerX(),b.centerY()-100);globalSend(MotionEvent.ACTION_UP,b.centerX(),b.centerY()-100);
 +        assertTrue(scrubber.actions.contains(MotionEvent.ACTION_CANCEL));assertEquals(java.util.Arrays.asList(0,2,1),viewer.nativeActions);}
++    @Test public void downwardPagingFromTheTouchStripHasTravelRoomAndCancelsSeeking(){
++        setupBar();apply(true);RectF b=bounds(scrubber);
++        float start=b.centerY()+20,end=start+48;
++        assertTrue(end<fullViewport().bottom);
++        globalSend(MotionEvent.ACTION_DOWN,b.centerX(),start);
++        globalSend(MotionEvent.ACTION_MOVE,b.centerX(),end);
++        globalSend(MotionEvent.ACTION_UP,b.centerX(),end);
++        assertTrue(scrubber.actions.contains(MotionEvent.ACTION_CANCEL));
++        assertEquals(java.util.Arrays.asList(0,2,1),viewer.nativeActions);
++    }
 +    @Test public void proxyStripForwardsSeekingBelowTheOldViewerTouchRectangle(){setupBar();apply(true);
 +        View hit=content.getChildAt(content.getChildCount()-1);FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)hit.getLayoutParams();
 +        hit.measure(View.MeasureSpec.makeMeasureSpec(lp.width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(lp.height,View.MeasureSpec.EXACTLY));
@@ -5442,7 +5495,7 @@ index 00000000..c8c8227c
 +        pages.get(1).removeView(old);setupBar();apply(true);assertEquals(1,old.getScaleX(),.001f);assertEquals(992,bounds(scrubber).right,.01f);}
 +    @Test public void landscapeResizeRepositionsWithoutChangingNativePlaybackOrProgress(){setupBar();scrubber.setProgress(42);apply(true);
 +        RectF wide=new RectF(0,0,1600,1000);clipping.beginFrame();progress.frame(viewer,wide,content,content,true,controls,clipping);clipping.endFrame();
-+        assertEquals(1592,bounds(scrubber).right,.01f);assertEquals(952,bounds(scrubber).bottom,.01f);assertEquals(42,scrubber.getProgress());}
++        assertEquals(1592,bounds(scrubber).right,.01f);assertEquals(904,bounds(scrubber).bottom,.01f);assertEquals(42,scrubber.getProgress());}
 +    @Test public void compactCaptionStaysAboveTheNativeSeekBarAndRestoresInNativeMode(){
 +        setupBar();android.widget.TextView caption=new android.widget.TextView(activity);
 +        caption.setTag("clips_caption_text");caption.setText("Regression caption");add(pages.get(1),caption,106,1300,788,40);

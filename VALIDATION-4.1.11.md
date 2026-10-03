@@ -31,3 +31,15 @@ La disparition des commentaires en rotation reste non corrigée et d’origine i
 Le recadrage marqué des vidéos verticales en paysage est le compromis du remplissage. Le profil Instagram complet et le menu de cadrage restent disponibles. Aucun déplacement arbitraire des commandes, aucune donnée privée ajoutée au kit.
 
 La publication et la fusion restent interdites avant validation physique convaincante. La CI candidate produit uniquement des artefacts.
+
+## Ajustements après la première passe physique du 3 octobre
+
+Le cycle direct de pliage et réouverture a conservé la vidéo, sa frame et la pause, avec retour des deux profils. Ce cas avait encore une TextureView ; il ne valide pas la transition rare sans décodeur. Les options Suivre et Suivi par persistent après cold start ; Suivre réapparaît après désactivation. Le retour du texte Suivi par sur un même média reste à vérifier.
+
+Le haut du viewport était à y110 et l’action bar native à y132,5 : la marge ajoutée de 8 dp déplaçait également son ShapeDrawable de contraste. L’action bar reconnue est maintenant alignée sur le haut sûr du viewport, en conservant son fond et son espacement interne natifs. Un test de rasterisation vérifie le contraste au premier pixel utile, le bouton et la restitution de l’animation native.
+
+Un swipe descendant de 116 px depuis la jauge à y2294 jusqu’à y2410 a activé le mode Samsung à une main. Son extrémité entrait dans la zone des gestes système ; un point de départ sûr ne suffisait pas. La marge réserve désormais 48 dp de déplacement descendant sous la zone tactile de 48 dp, avec les insets obligatoires. Cela ne prétend pas neutraliser les gestes traversant volontairement la zone système. La préférence Samsung reste activée. Retest physique indispensable.
+
+Le diagnostic porte désormais la version 4.1.11 et rapporte aussi la présence de la jauge native et la géométrie de sa zone tactile. Sur un autre média après cold start, la jauge était absente même en disposition native : ce cas n’est pas une preuve de disparition causée par le recadrage.
+
+Cette révision déclare 179 scénarios Android. Les captures de la première passe concernent l’ancien APK ; CI, nouveau MPP, nouvel APK et validation ciblée de ces ajustements restent requis. Aucun artefact privé du téléphone n’est inclus dans le kit.
