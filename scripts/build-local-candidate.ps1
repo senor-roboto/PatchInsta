@@ -3,13 +3,16 @@ param(
     [Parameter(Mandatory = $true)][string]$Apkm,
     [Parameter(Mandatory = $true)][string]$Mpp,
     [Parameter(Mandatory = $true)][string]$OutputApk,
+    [Parameter(Mandatory = $true)][string]$PatchList,
+    [string]$ToolWorkspace,
     [string]$PythonExe
 )
 
 # Builds a local, test-signed candidate APK. This script deliberately has no
 # ADB/install path and never copies the private APKM into the workspace.
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $PSScriptRoot -Parent
+$kitRoot = Split-Path $PSScriptRoot -Parent
+$root = if ($ToolWorkspace) { (Resolve-Path -LiteralPath $ToolWorkspace).Path } else { $kitRoot }
 $java = Join-Path $root '.work/jdk21/jdk-21.0.12.1+1/bin/java.exe'
 $keytool = Join-Path $root '.work/jdk21/jdk-21.0.12.1+1/bin/keytool.exe'
 $morphe = Join-Path $root '.work/morphe-1.14.0-dev.1.jar'
@@ -59,13 +62,20 @@ function Invoke-Checked([string]$File, [string[]]$Arguments, [string]$Label) {
 }
 
 # Create a template from the supplied candidate MPP; then explicitly enable
-# precisely its 60 Instagram patches and set Clone's package identity.
+# every Instagram patch in its verified compiled list and set Clone's package identity.
 Invoke-Checked $java @('-jar', $morphe, 'options-create', '-p', $mppPath, '-f', 'com.instagram.android', '-o', $optionsPath) 'Morphe options-create' | Out-Null
 $options = Get-Content -LiteralPath $optionsPath -Raw | ConvertFrom-Json
 if ($options.Count -ne 1) { throw 'Expected exactly one options bundle for the candidate MPP.' }
 $patchMap = $options[0].patches
-if (@($patchMap.PSObject.Properties).Count -ne 60) { throw "Expected 60 patches in candidate MPP; found $(@($patchMap.PSObject.Properties).Count)." }
-foreach ($name in @('Adaptive Fold Reels', 'Clone')) {
+$compiledList = Get-Content -LiteralPath $PatchList -Raw | ConvertFrom-Json
+$kitConfig = Get-Content -LiteralPath (Join-Path $kitRoot 'release.json') -Raw | ConvertFrom-Json
+if ($compiledList.version -ne $kitConfig.version) { throw 'Compiled patch list version differs from candidate kit.' }
+$expectedNames = @($compiledList.patches | Where-Object {
+    !$_.compatiblePackages -or @($_.compatiblePackages | Where-Object packageName -eq 'com.instagram.android').Count -gt 0
+} | ForEach-Object { $_.name } | Sort-Object -Unique)
+$selectedNames = @($patchMap.PSObject.Properties.Name | Sort-Object -Unique)
+if (!$expectedNames.Count -or (Compare-Object $expectedNames $selectedNames)) { throw 'Morphe options differ from the verified compiled Instagram patch list.' }
+foreach ($name in @('Adaptive Fold Reels', 'Clone', 'Hide Reels follow button', 'Hide Reels followed-by text')) {
     if (!$patchMap.PSObject.Properties[$name]) { throw "Required patch absent from candidate MPP: $name" }
 }
 foreach ($name in $patchMap.PSObject.Properties.Name) { $patchMap.$name.enabled = $true }
@@ -87,8 +97,9 @@ if (!(Test-Path -LiteralPath $rawApk -PathType Leaf) -or !(Test-Path -LiteralPat
 
 $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
 $applied = @($result.appliedPatches)
-if ($applied.Count -ne 60 -or @($result.failedPatches).Count -ne 0) { throw 'Morphe result did not report 60 successful patches with no failures.' }
+if ($applied.Count -ne $selectedNames.Count -or @($result.failedPatches).Count -ne 0) { throw 'Morphe result did not report every selected patch applied without failures.' }
 $appliedNames = @($applied | ForEach-Object { $_.name })
+if (Compare-Object $selectedNames @($appliedNames | Sort-Object -Unique)) { throw 'Applied patch names differ from the verified selected list.' }
 if ($appliedNames -notcontains 'Adaptive Fold Reels' -or $appliedNames -notcontains 'Clone') { throw 'Required patches were not applied.' }
 $clone = $applied | Where-Object name -eq 'Clone' | Select-Object -First 1
 if (($clone.options | Where-Object key -eq 'packageName' | Select-Object -ExpandProperty value -First 1) -ne 'com.instagram.android.patchinstalab') {

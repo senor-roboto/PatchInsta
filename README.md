@@ -2,6 +2,8 @@
 
 **Adaptive Fold Reels**, dérivé non officiel de Piko, pour les deux écrans du Galaxy Z Fold.
 
+Cette branche prépare la **4.1.11** sur Piko **3.10.0-dev.9**. [État des contrôles et limites du candidat](VALIDATION-4.1.11.md). Les téléchargements publics ci-dessous restent ceux de la version publiée.
+
 La **4.1.10** étend Plein écran propre aux deux écrans, avec une icône de preset,
 une réactivation fiable à la réouverture et une jauge native adaptée au viewport.
 Le défaut est propre sur l’écran externe et complet sur l’interne ; les réglages
@@ -37,7 +39,7 @@ Les deux écrans proposent **Plein écran propre** (crop proportionnel, commenta
 métadonnées compactes, cadre reconnu nettoyé, dégradé natif adapté et jauge basse)
 et **Instagram complet** (présentation native). Les préférences sont indépendantes.
 Le tap bref sur l’icône applique un preset complet ; l’appui long ouvre les options.
-L’écran interne reste natif par défaut. Les anciens réglages enregistrés sont conservés.
+Pour une nouvelle configuration, l’écran interne remplit la zone vidéo en conservant la navigation. Les anciens réglages enregistrés sont conservés. Le menu propose aussi les profils Instagram complet et Plein écran propre, ainsi que le profil personnalisé actuel.
 Aucun pliage, swipe ou changement de preset ne recharge automatiquement le lecteur.
 
 Le bloc interactif reste à l’intérieur des limites tactiles du viewer. Une variante dont ces limites s’arrêtent au-dessus des anciens onglets peut donc conserver un retrait en bas ; le patch privilégie des boutons fonctionnels. Le bandeau partagé reconnu reste ancré au viewport et le raccourci se place en dessous. Un décor ou une structure non reconnus restent natifs. Le diagnostic explique les détections sans copier de contenu utilisateur.
@@ -56,7 +58,7 @@ Les fichiers de Release sont durables. Les artefacts Actions servent uniquement 
 
 ## Sources, compilation et vérification
 
-Appliquer `piko-fold-reels.patch` à [Piko au commit épinglé](https://github.com/crimera/piko/tree/50744aa07bb41c4e1f942a06614ef4e6f2e3610c). Java 17, Android SDK et accès Maven Morphe nécessaires. La [CI](https://github.com/senor-roboto/PatchInsta/actions/workflows/build-fold-reels.yml) vérifie l’application du diff, les tests, les 13 mappings et les ressources FR/EN, compile le `.mpp`, le charge avec Morphe, puis vérifie le ZIP et les téléchargements de Release. Aucune publication si un de ces contrôles échoue.
+Appliquer `piko-fold-reels.patch` à [Piko au commit épinglé](https://github.com/crimera/piko/tree/9813ccd2eb36146b804e6eb0309286089761c9ba). Java 17, Android SDK et accès Maven Morphe nécessaires. La [CI](https://github.com/senor-roboto/PatchInsta/actions/workflows/build-fold-reels.yml) vérifie l’application du diff, les tests, les 13 mappings et les ressources FR/EN, compile le `.mpp`, le charge avec Morphe, puis vérifie le ZIP et les téléchargements de Release. Aucune publication si un de ces contrôles échoue.
 
 `release.json`, le manifeste compilé et le JSON Morphe doivent porter la même version. La publication séparée promeut un candidat précis avec son empreinte MPP et ses preuves de validation. Elle vérifie les téléchargements de Release avant de mettre à jour la source Morphe, sans remplacer un binaire déjà publié.
 
