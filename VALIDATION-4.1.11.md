@@ -43,3 +43,15 @@ Un swipe descendant de 116 px depuis la jauge à y2294 jusqu’à y2410 a activ�
 Le diagnostic porte désormais la version 4.1.11 et rapporte aussi la présence de la jauge native et la géométrie de sa zone tactile. Sur un autre média après cold start, la jauge était absente même en disposition native : ce cas n’est pas une preuve de disparition causée par le recadrage.
 
 Cette révision déclare 179 scénarios Android. Les captures de la première passe concernent l’ancien APK ; CI, nouveau MPP, nouvel APK et validation ciblée de ces ajustements restent requis. Aucun artefact privé du téléphone n’est inclus dans le kit.
+
+## Reprise scroll stable — source 5c0cba13
+
+Nouvelle demande utilisateur enregistrée dans le plan racine. Publication toujours bloquée : les 179 tests de l'ancien candidat ne valident pas ces nouvelles corrections. Téléphone actuellement autorisé uniquement fermé, écran externe.
+
+Causes de calcul établies en source : seuil de restauration des scrubbers à 45 % ; limite metadata tirée d'une barre déjà déplacée puis déplacement ajouté de nouveau ; déplacement du gradient monté ajouté deux fois ; proxy tactile demandant un layout par frame ; possibilité de UP distant sans MOVE traité comme tap. Corrections : toutes les barres préparées, réservation commune stationnaire, gradient corrigé, translation du proxy et contrôle du UP. Cible 48 dp + trajet descendant 48 dp protégés par les insets Android, barre fine centrée plus bas dans cette zone.
+
+Pipeline natif : mesure ciblée du ViewPager2 Reels selon la hauteur de viewport, avant premier dessin via pre-draw annulé seulement pendant sa mesure native, garde borné en cas de hook manquant. Aucun adapter, moteur de scroll ou animation remplacé. Reconnaissance de son RecyclerView interne obfusqué par parent ViewPager2. Réparation de montage de voisin tardif au dispatchDraw via signature structurelle ; aucun délai de 400 ms nécessaire pour ce cas.
+
+PC : 305 policy/géométrie, 13 mappings, 24 gardes distribution réussis. Nouvelle suite attendue : 189 scénarios Android ; CI pas encore exécutée. Tests nouveaux couvrent mesure réelle synthétique, premier dessin retardé jusqu'au layout natif, mêmes transforms/clips aux fractions 10/30/50/70/90 et retour dans les deux sens, voisinage, autres pagers/photos, resize et restauration, limite metadata stable, gradient monté stable, montage tardif et UP distant.
+
+Limites : origine du rectangle sombre central encore non prouvée, notamment piste foreground clips_pause_and_mute_component/X.01Qh. Aucun résultat visuel/physique annoncé pour ce nouveau code. CI/APK et vrais gestes externes à faire ; gates intérieurs/paysage et poster-only restent ouverts. L'ancien APK9fe8 reste installé Lab, temporaire externe clean testé puis rendu natif initial restauré.
