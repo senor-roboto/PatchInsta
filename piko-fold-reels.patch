@@ -4190,7 +4190,7 @@ index 526d6bde..db3a0c58 100644
      }
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsDrawingTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsDrawingTest.java
 new file mode 100644
-index 00000000..3d76a5fe
+index 00000000..027032c9
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsDrawingTest.java
 @@ -0,0 +1,88 @@
@@ -4248,7 +4248,7 @@ index 00000000..3d76a5fe
 +        try {
 +            renderer.discover(viewer);header.discover(renderer,viewer,content);
 +            clipping.beginFrame();header.frame(viewer,bounds(viewer),content,true,clipping);clipping.endFrame();
-+            Bitmap bitmap=draw();assertEquals(110,bounds(row).top,.01f);
++            Bitmap bitmap=draw();assertEquals(bounds(viewer).top,bounds(row).top,.01f);
 +            assertEquals(Color.WHITE,bitmap.getPixel(980,109));
 +            assertTrue(Color.red(bitmap.getPixel(980,111))<200);
 +            assertEquals(Color.GREEN,bitmap.getPixel(70,138));
@@ -4926,7 +4926,7 @@ index 00000000..1f9f2db7
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsNativeScrimTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsNativeScrimTest.java
 new file mode 100644
-index 00000000..d7504b39
+index 00000000..b728da1d
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsNativeScrimTest.java
 @@ -0,0 +1,80 @@
@@ -4975,7 +4975,7 @@ index 00000000..d7504b39
 +        assertTrue(row.getBackground() instanceof FoldReelsScrim.ExtendedGradient);Bitmap actual=drawing(),nativeImage=nativeGradient(original,56);
 +        for(int y=1;y<55;y++)assertEquals("native distance="+y,nativeImage.getPixel(900,y),actual.getPixel(900,y));
 +        assertEquals(Color.WHITE,actual.getPixel(900,75));assertEquals(56, row.getHeight());assertEquals(1,row.getScaleY(),.001f);
-+        assertEquals(bounds(viewer).top+8,bounds(row).top,.01f);
++        assertEquals(bounds(viewer).top,bounds(row).top,.01f);
 +    }
 +    @Test public void bottomScrimKeepsItsFadeDistanceAtTheWindowEdge(){
 +        FrameLayout row=new FrameLayout(activity);GradientDrawable original=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{Color.TRANSPARENT,0xAA000000});
@@ -5407,10 +5407,10 @@ index 00000000..ce72cec1
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgressTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgressTest.java
 new file mode 100644
-index 00000000..21fe697b
+index 00000000..bbe4482a
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsProgressTest.java
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,116 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.RectF;
@@ -5455,12 +5455,18 @@ index 00000000..21fe697b
 +        globalSend(MotionEvent.ACTION_DOWN,b.centerX(),b.centerY());globalSend(MotionEvent.ACTION_MOVE,b.centerX(),b.centerY()-100);globalSend(MotionEvent.ACTION_UP,b.centerX(),b.centerY()-100);
 +        assertTrue(scrubber.actions.contains(MotionEvent.ACTION_CANCEL));assertEquals(java.util.Arrays.asList(0,2,1),viewer.nativeActions);}
 +    @Test public void downwardPagingFromTheTouchStripHasTravelRoomAndCancelsSeeking(){
-+        setupBar();apply(true);RectF b=bounds(scrubber);
-+        float start=b.centerY()+20,end=start+48;
-+        assertTrue(end<fullViewport().bottom);
-+        globalSend(MotionEvent.ACTION_DOWN,b.centerX(),start);
-+        globalSend(MotionEvent.ACTION_MOVE,b.centerX(),end);
-+        globalSend(MotionEvent.ACTION_UP,b.centerX(),end);
++        setupBar();apply(true);
++        View hit=content.getChildAt(content.getChildCount()-1);
++        FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)hit.getLayoutParams();
++        hit.measure(View.MeasureSpec.makeMeasureSpec(lp.width,View.MeasureSpec.EXACTLY),
++                View.MeasureSpec.makeMeasureSpec(lp.height,View.MeasureSpec.EXACTLY));
++        hit.layout(lp.leftMargin,lp.topMargin,lp.leftMargin+lp.width,lp.topMargin+lp.height);
++        float start=lp.height/2f+20,end=start+48;
++        assertTrue(bounds(hit).top+end<fullViewport().bottom);
++        for(int action:new int[]{MotionEvent.ACTION_DOWN,MotionEvent.ACTION_MOVE,MotionEvent.ACTION_UP}){
++            MotionEvent event=touch(action,lp.width*.5f,action==MotionEvent.ACTION_DOWN?start:end);
++            assertTrue(hit.dispatchTouchEvent(event));event.recycle();
++        }
 +        assertTrue(scrubber.actions.contains(MotionEvent.ACTION_CANCEL));
 +        assertEquals(java.util.Arrays.asList(0,2,1),viewer.nativeActions);
 +    }
