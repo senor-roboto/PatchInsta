@@ -1445,10 +1445,10 @@ index 00000000..95480aa4
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
 new file mode 100644
-index 00000000..c8ce5917
+index 00000000..28ac2100
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
-@@ -0,0 +1,362 @@
+@@ -0,0 +1,368 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1569,10 +1569,16 @@ index 00000000..c8ce5917
 +        out.append("controls ").append(status()).append('\n');
 +        for (Map.Entry<ViewGroup, Rail> entry : rails.entrySet()) {
 +            Rail r = entry.getValue();
++            FoldReelsViews.bounds(entry.getKey(), work, matrix);
 +            out.append("rail ").append(FoldReelsDiagnostics.id(entry.getKey())).append(" mask=").append(r.mask)
++                    .append(" page=").append(FoldReelsDiagnostics.id(r.page.get())).append(" global=").append(work)
 +                    .append(" applied=").append(r.applied).append(" offset=").append(r.ax-r.x).append(',').append(r.ay-r.y).append('\n');
 +            if (mode == Actions.COMMENT_ONLY) for (WeakReference<View> ref : r.hidden) {
-+                View v = ref.get(); if (v != null) out.append(" hidden ").append(FoldReelsDiagnostics.id(v)).append(" vis=").append(v.getVisibility()).append('\n');
++                View v = ref.get(); if (v != null) {
++                    FoldReelsViews.bounds(v, work, matrix);
++                    out.append(" hidden ").append(FoldReelsDiagnostics.id(v)).append(" vis=").append(v.getVisibility())
++                            .append(" global=").append(work).append('\n');
++                }
 +            }
 +        }
 +    }
@@ -3499,10 +3505,10 @@ index 00000000..ce4d03a2
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRenderer.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRenderer.java
 new file mode 100644
-index 00000000..81f18b3b
+index 00000000..56888dba
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsRenderer.java
-@@ -0,0 +1,285 @@
+@@ -0,0 +1,369 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -3524,10 +3530,16 @@ index 00000000..81f18b3b
 +/** Discovery is event driven; every known pager surface is framed before each draw, including neighbours. */
 +final class FoldReelsRenderer implements View.OnLayoutChangeListener, View.OnAttachStateChangeListener {
 +    private final WeakHashMap<View, SurfaceState> states = new WeakHashMap<>();
++    private WeakReference<View> lastViewer = new WeakReference<>(null);
 +    private final Runnable changed;
 +    private final java.util.function.Function<View, String> names;
 +    private final RectF viewerBounds = new RectF();
 +    private final Matrix matrix = new Matrix();
++    private final Matrix traceViewMatrix = new Matrix(), traceTextureMatrix = new Matrix();
++    private final RectF traceRect = new RectF(), traceClipGlobal = new RectF(), tracePageGlobal = new RectF();
++    private final RectF traceParentGlobal = new RectF(), tracePageParentGlobal = new RectF();
++    private final RectF tracePagerGlobal = new RectF(), traceViewerGlobal = new RectF();
++    private final float[] traceMatrixValues = new float[9], tracePivot = new float[2];
 +    private int generation, nodes, framed, unanchored;
 +    private long discoveries, frames;
 +    private long structure;
@@ -3588,18 +3600,95 @@ index 00000000..81f18b3b
 +    }
 +    void trace(StringBuilder out) {
 +        for (Map.Entry<View, SurfaceState> entry : states.entrySet()) {
-+            out.append("player ").append(FoldReelsDiagnostics.id(entry.getKey()))
-+                    .append(" page=").append(FoldReelsDiagnostics.id(entry.getValue().page.get()))
-+                    .append(" target=").append(entry.getValue().target)
-+                    .append(" size=").append(entry.getKey().getWidth()).append('x').append(entry.getKey().getHeight())
-+                    .append(" pageHeight=").append(entry.getValue().page.get()==null?0:entry.getValue().page.get().getHeight())
-+                    .append(" local=").append(entry.getKey().getTranslationX()).append(',').append(entry.getKey().getTranslationY())
-+                    .append(" scale=").append(entry.getKey().getScaleX()).append(',').append(entry.getKey().getScaleY())
-+                    .append(" clip=").append(entry.getKey().getClipBounds()).append('\n');
++            View view = entry.getKey(); SurfaceState state = entry.getValue(); View page = state.page.get();
++            out.append("player ").append(FoldReelsDiagnostics.id(view))
++                    .append(" page=").append(FoldReelsDiagnostics.id(page))
++                    .append(" target=").append(state.target)
++                    .append(" size=").append(view.getWidth()).append('x').append(view.getHeight())
++                    .append(" pageHeight=").append(page==null?0:page.getHeight())
++                    .append(" local=").append(view.getTranslationX()).append(',').append(view.getTranslationY())
++                    .append(" scale=").append(view.getScaleX()).append(',').append(view.getScaleY())
++                    .append(" clip=").append(view.getClipBounds()).append('\n');
++            traceMapping(out, view, page, state);
 +        }
 +    }
 +
++    /** Structural geometry on a separate line so existing player-trace readers stay compatible. */
++    private void traceMapping(StringBuilder out, View view, View page, SurfaceState state) {
++        traceViewMatrix.reset(); view.transformMatrixToGlobal(traceViewMatrix);
++        traceRect.set(0, 0, view.getWidth(), view.getHeight()); traceClipGlobal.set(traceRect);
++        Rect clip = view.getClipBounds();
++        if (clip != null) traceRect.set(clip.left, clip.top, clip.right, clip.bottom);
++        traceClipGlobal.set(traceRect); traceViewMatrix.mapRect(traceClipGlobal);
++        tracePivot[0] = view.getPivotX(); tracePivot[1] = view.getPivotY();
++        traceViewMatrix.mapPoints(tracePivot);
++
++        out.append("mapping player=").append(FoldReelsDiagnostics.id(view)).append(" applied=").append(state.applied)
++                .append(" clipped=").append(state.clipped).append(" viewGlobalM="); appendMatrix(out, traceViewMatrix);
++        if (view instanceof TextureView) {
++            ((TextureView)view).getTransform(traceTextureMatrix);
++            out.append(" textureM="); appendMatrix(out, traceTextureMatrix);
++        } else out.append(" textureM=none");
++        out.append(" nativeScale=").append(state.sx).append(',').append(state.sy)
++                .append(" nativeTranslation=").append(state.tx).append(',').append(state.ty)
++                .append(" nativeClip=").append(state.nativeClip)
++                .append(" pivotLocal=").append(view.getPivotX()).append(',').append(view.getPivotY())
++                .append(" pivotGlobal=").append(tracePivot[0]).append(',').append(tracePivot[1])
++                .append(" applyPivotGlobal=").append(state.pivot[0]).append(',').append(state.pivot[1])
++                .append(" targetGlobal=").append(state.target)
++                .append(" viewClipGlobal=").append(traceClipGlobal)
++                .append(" preApplySourceGlobal=").append(state.source)
++                .append(" viewLayout=").append(view.getLeft()).append(',').append(view.getTop()).append(',')
++                .append(view.getRight()).append(',').append(view.getBottom()).append(" requested=").append(view.isLayoutRequested());
++
++        View parent = view.getParent() instanceof View ? (View)view.getParent() : null;
++        appendViewGeometry(out, "page", page, tracePageGlobal);
++        appendViewGeometry(out, "parent", parent, traceParentGlobal);
++        View pageParent = page != null && page.getParent() instanceof View ? (View)page.getParent() : null;
++        appendViewGeometry(out, "pageParent", pageParent, tracePageParentGlobal);
++        View pager = pageParent;
++        while (pager != null && !FoldReelsViews.pagerContainer(pager))
++            pager = pager.getParent() instanceof View ? (View)pager.getParent() : null;
++        appendViewGeometry(out, "pager", pager, tracePagerGlobal);
++        if (pager != null) out.append(" pagerPadding=").append(pager.getPaddingLeft()).append(',').append(pager.getPaddingTop())
++                .append(',').append(pager.getPaddingRight()).append(',').append(pager.getPaddingBottom())
++                .append(" pagerScroll=").append(pager.getScrollX()).append(',').append(pager.getScrollY());
++
++        View viewer = lastViewer.get();
++        if (page != null && viewer != null && page.getHeight() > 0 && state.target.height() > 0) {
++            FoldReelsViews.bounds(viewer, traceViewerGlobal, matrix);
++            float nativeOffset = FoldReelsViews.pagerContainer(pageParent)
++                    ? tracePageGlobal.top - tracePageParentGlobal.top - pageParent.getPaddingTop()
++                    : tracePageGlobal.top - traceViewerGlobal.top;
++            float normalizedOffset = FoldReelsViews.pageOffset(page, viewer, state.target.height(), traceRect, matrix);
++            out.append(" viewerGlobal=").append(traceViewerGlobal)
++                    .append(" pageOffsetNative=").append(nativeOffset).append(" pageOffsetNormalized=").append(normalizedOffset)
++                    .append(" pageOffsetApplied=").append(state.applied ? Float.toString(state.lastPageOffset) : "unavailable");
++        } else out.append(" viewerGlobal=unavailable pageOffsetNative=unavailable pageOffsetNormalized=unavailable pageOffsetApplied=unavailable");
++        out.append('\n');
++    }
++
++    private void appendViewGeometry(StringBuilder out, String name, View view, RectF global) {
++        out.append(' ').append(name).append("Id=").append(FoldReelsDiagnostics.id(view));
++        if (view == null) { global.setEmpty(); out.append(' ').append(name).append("Global=none"); return; }
++        FoldReelsViews.bounds(view, global, matrix);
++        out.append(' ').append(name).append("Global=").append(global).append(' ').append(name).append("Local=")
++                .append(view.getWidth()).append('x').append(view.getHeight()).append(' ').append(name).append("Layout=")
++                .append(view.getLeft()).append(',').append(view.getTop()).append(',').append(view.getRight()).append(',').append(view.getBottom())
++                .append(' ').append(name).append("Requested=").append(view.isLayoutRequested());
++    }
++
++    private void appendMatrix(StringBuilder out, Matrix value) {
++        value.getValues(traceMatrixValues); out.append('[');
++        for (int i = 0; i < traceMatrixValues.length; i++) {
++            if (i > 0) out.append(',');
++            out.append(traceMatrixValues[i]);
++        }
++        out.append(']');
++    }
++
 +    void discover(View viewer) {
++        lastViewer = new WeakReference<>(viewer);
 +        structure = signature(viewer);
 +        generation++; discoveries++; nodes = 0;
 +        collect(viewer, viewer, 0);
@@ -3684,6 +3773,7 @@ index 00000000..81f18b3b
 +            state.target.set(viewport);
 +            float offset = FoldReelsViews.pageOffset(page, viewer, viewport.height(), state.work, state.matrix);
 +            if (!Float.isFinite(offset)) { state.restore(view); continue; }
++            state.lastPageOffset = offset;
 +            state.target.offset(0, offset);
 +            clipping.openPath(view, boundary);
 +            state.apply(view, factor);
@@ -3710,7 +3800,7 @@ index 00000000..81f18b3b
 +    private static final class SurfaceState {
 +        WeakReference<View> page = new WeakReference<>(null);
 +        int seen;
-+        float sx, sy, tx, ty, asx, asy, atx, aty;
++        float sx, sy, tx, ty, asx, asy, atx, aty, lastPageOffset;
 +        boolean applied, clipped;
 +        Rect nativeClip, lastClip;
 +        final RectF source = new RectF(), target = new RectF(), work = new RectF();
@@ -3790,10 +3880,10 @@ index 00000000..81f18b3b
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsScrim.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsScrim.java
 new file mode 100644
-index 00000000..32cb146d
+index 00000000..a4cb9060
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsScrim.java
-@@ -0,0 +1,369 @@
+@@ -0,0 +1,383 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -3885,11 +3975,17 @@ index 00000000..32cb146d
 +        if (state != null && state.leaf) { state.capture(v); state.nativeBounds(v, box, matrix); }
 +        else FoldReelsViews.bounds(v, box, matrix);
 +        float relativeTop = box.top - anchor.top, relativeBottom = box.bottom - anchor.top;
-+        boolean full = box.height() >= viewer.getHeight() * .65f && relativeTop >= -2
-+                && relativeTop <= viewer.getHeight() * .25f && relativeBottom >= viewer.getHeight() * .7f;
++        // The verified mounted bottom fade is laid out against the native page, which
++        // can be taller than the interactive viewer. Use that page only after the
++        // exact mounted ShapeDrawable signature above has matched and a coherent page
++        // anchor was found. Other gradients continue to use viewer geometry.
++        float geometryHeight = mountedGradient && coherentPage(page, viewer)
++                ? page.getHeight() : viewer.getHeight();
++        boolean full = box.height() >= geometryHeight * .65f && relativeTop >= -2
++                && relativeTop <= geometryHeight * .25f && relativeBottom >= geometryHeight * .7f;
 +        if (!full && (((edges & FoldReelsContrast.TOP) != 0 && (relativeTop < -2 || relativeTop > viewer.getHeight() * .25f))
-+                || ((edges & FoldReelsContrast.BOTTOM) != 0 && (relativeBottom < viewer.getHeight() * .65f || relativeBottom > viewer.getHeight() * 1.1f))
-+                || box.height() > viewer.getHeight() * (mountedGradient ? .65f : .45f))) return;
++                || ((edges & FoldReelsContrast.BOTTOM) != 0 && (relativeBottom < geometryHeight * .65f || relativeBottom > geometryHeight * 1.1f))
++                || box.height() > geometryHeight * (mountedGradient ? .65f : .45f))) return;
 +        if (state == null) { state = new State(); states.put(v, state); v.addOnAttachStateChangeListener(this); }
 +        boolean leaf = mountedGradient || (!full && edges != FoldReelsContrast.BOTH && (named || (!container && slots == 1 && only instanceof GradientDrawable
 +                && !FoldReelsContrast.rounded((GradientDrawable) only) && v.getForeground() == null)));
@@ -3929,6 +4025,14 @@ index 00000000..32cb146d
 +            return drawableFields == 1 && payload instanceof android.graphics.drawable.ShapeDrawable
 +                    && payload.getCallback() == wrapper;
 +        } catch (ReflectiveOperationException | RuntimeException ignored) { return false; }
++    }
++    private static boolean coherentPage(View page, View viewer) {
++        if (page == null || page == viewer || viewer.getWidth() <= 0 || viewer.getHeight() <= 0
++                || !FoldReelsViews.descendant(page, viewer)) return false;
++        float width = page.getWidth(), height = page.getHeight();
++        return Float.isFinite(width) && Float.isFinite(height)
++                && width >= viewer.getWidth() * .9f && width <= viewer.getWidth() * 1.1f
++                && height >= viewer.getHeight() * .9f && height <= viewer.getHeight() * 1.5f;
 +    }
 +    static Drawable original(Drawable drawable) {
 +        return drawable instanceof ExtendedGradient ? ((ExtendedGradient) drawable).nativeDrawable : drawable;
@@ -6201,10 +6305,10 @@ index 00000000..534cb828
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
 new file mode 100644
-index 00000000..287bcbe2
+index 00000000..6ead894d
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
-@@ -0,0 +1,181 @@
+@@ -0,0 +1,223 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -6241,6 +6345,48 @@ index 00000000..287bcbe2
 +        for (TextureView video : videos) { assertTrue(video.getScaleX() > 1.2f); assertNotNull(video.getClipBounds()); }
 +        RectF above = displayedClip(videos.get(0)), centre = displayedClip(videos.get(1)), below = displayedClip(videos.get(2));
 +        assertEquals("clips=" + above + " / " + centre + " / " + below, above.bottom, centre.top, 2.6f); assertEquals(centre.bottom, below.top, 2.6f);
++    }
++    @Test public void mappingTraceSeparatesNativeRelayoutFromTheGlobalCardWindow() {
++        viewer.layout(0, 0, 1248, 1972); pages.get(1).layout(0, 0, 1248, 1972);
++        TextureView video = videos.get(1);
++        video.layout(148, 140, 1100, 1831); // 952x1691 native surface in a 1248x1972 card.
++        renderer.discover(viewer); frameMappingViewport();
++        String first = mappingLine(video);
++        assertTrue(first, first.contains("viewGlobalM=[") && first.contains("textureM=["));
++        assertTrue(first, first.contains("nativeScale=") && first.contains("nativeClip="));
++        assertTrue(first, first.contains("pivotLocal=") && first.contains("pivotGlobal="));
++        assertTrue(first, first.contains("preApplySourceGlobal=") && first.contains("pageOffsetNormalized="));
++        assertClipWindow(first, 0, 0, 1248, 1972);
++        String before = playerLine(video);
++        assertTrue(before, before.contains("size=952x1691"));
++
++        video.layout(79, 18, 1168, 1954); // 1089x1936 after native relayout.
++        frameMappingViewport();
++        String second = mappingLine(video);
++        assertClipWindow(second, 0, 0, 1248, 1972);
++        String after = playerLine(video);
++        assertTrue(after, after.contains("size=1089x1936"));
++    }
++    private void frameMappingViewport() {
++        clipping.beginFrame();
++        renderer.frame(viewer, new RectF(0, 0, 1248, 1972), content, true, 1, clipping);
++        clipping.endFrame();
++    }
++    private String rendererTrace() { StringBuilder out = new StringBuilder(); renderer.trace(out); return out.toString(); }
++    private String traceLine(String prefix) {
++        for (String line : rendererTrace().split("\\R")) if (line.startsWith(prefix)) return line;
++        fail("missing mapping line for " + prefix); return "";
++    }
++    private String mappingLine(TextureView video) { return traceLine("mapping player=" + FoldReelsDiagnostics.id(video)); }
++    private String playerLine(TextureView video) { return traceLine("player " + FoldReelsDiagnostics.id(video) + " "); }
++    private void assertClipWindow(String line, float left, float top, float right, float bottom) {
++        java.util.regex.Matcher match = java.util.regex.Pattern.compile(
++                "viewClipGlobal=RectF\\((-?[0-9.]+), (-?[0-9.]+), (-?[0-9.]+), (-?[0-9.]+)\\)").matcher(line);
++        assertTrue(line, match.find());
++        assertEquals(left, Float.parseFloat(match.group(1)), 1.5f);
++        assertEquals(top, Float.parseFloat(match.group(2)), 1.5f);
++        assertEquals(right, Float.parseFloat(match.group(3)), 1.5f);
++        assertEquals(bottom, Float.parseFloat(match.group(4)), 2f);
 +    }
 +    @Test public void everySwipeFrameUsesCachedPlayersWithoutDiscoveryOrScalePopping() {
 +        renderer.discover(viewer); RectF viewport = fullViewport();
@@ -6610,6 +6756,77 @@ index 00000000..952a830f
 +        @Override public boolean onTouchEvent(MotionEvent event) { return true; }
 +    }
 +}
+diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsTraceTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsTraceTest.java
+new file mode 100644
+index 00000000..35a8cc07
+--- /dev/null
++++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsTraceTest.java
+@@ -0,0 +1,65 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.morphe.extension.instagram.patches.reels;
++
++import android.graphics.RectF;
++import android.view.TextureView;
++import android.view.View;
++import android.widget.FrameLayout;
++import androidx.viewpager2.widget.ViewPager2;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.RobolectricTestRunner;
++import org.robolectric.annotation.Config;
++import static org.junit.Assert.*;
++
++/** Verifies diagnostic offsets use the same page-to-viewer mapping as frame(). */
++@RunWith(RobolectricTestRunner.class)
++@Config(sdk=29,manifest=Config.NONE,qualifiers="w1000dp-h1600dp-mdpi")
++public class FoldReelsTraceTest extends FoldReelsTestFixture {
++    private ViewPager2 pager;
++
++    @Test public void appliedPageOffsetStaysRelativeToViewerWhenViewportStartsElsewhere() {
++        viewer.layout(0, 110, 1000, 1510);
++        setupNestedPager();
++        renderer.discover(viewer);
++
++        frameAtViewportOrigin();
++        String resting = mappingLine(videos.get(1));
++        assertTrue(resting, resting.contains("pageOffsetNative=0.0"));
++        assertTrue(resting, resting.contains("pageOffsetNormalized=0.0"));
++        assertTrue(resting, resting.contains("pageOffsetApplied=0.0"));
++
++        pager.strip.scrollTo(0, -250);
++        frameAtViewportOrigin();
++        String moved = mappingLine(videos.get(1));
++        assertTrue(moved, moved.contains("pageOffsetNative=250.0"));
++        assertTrue(moved, moved.contains("pageOffsetNormalized=250.0"));
++        assertTrue(moved, moved.contains("pageOffsetApplied=250.0"));
++    }
++
++    private void setupNestedPager() {
++        viewer.removeAllViews(); pages.clear(); videos.clear();
++        pager = new ViewPager2(activity); add(viewer, pager, 0, 0, 1000, 1400);
++        for (int i = 0; i < 3; i++) {
++            FrameLayout page = new FrameLayout(activity);
++            pager.strip.addView(page, new FrameLayout.LayoutParams(-1, -1)); pages.add(page);
++            TextureView video = new TextureView(activity); add(page, video, 106, 0, 788, 1400); videos.add(video);
++        }
++        pager.measure(View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY),
++                View.MeasureSpec.makeMeasureSpec(1400, View.MeasureSpec.EXACTLY));
++        pager.layout(0, 0, 1000, 1400);
++    }
++
++    private void frameAtViewportOrigin() {
++        clipping.beginFrame();
++        renderer.frame(viewer, new RectF(0, 0, 1000, 1400), content, true, 1, clipping);
++        clipping.endFrame();
++    }
++
++    private String mappingLine(TextureView video) {
++        String prefix = "mapping player=" + FoldReelsDiagnostics.id(video);
++        StringBuilder out = new StringBuilder(); renderer.trace(out);
++        for (String line : out.toString().split("\\R")) if (line.startsWith(prefix)) return line;
++        fail("missing mapping line for " + prefix); return "";
++    }
++}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsUpdateTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsUpdateTest.java
 new file mode 100644
 index 00000000..b5351574
@@ -6772,10 +6989,10 @@ index 00000000..b5351574
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsViewportTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsViewportTest.java
 new file mode 100644
-index 00000000..1205e1ad
+index 00000000..f1dd40eb
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsViewportTest.java
-@@ -0,0 +1,145 @@
+@@ -0,0 +1,249 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Color;
@@ -6786,6 +7003,7 @@ index 00000000..1205e1ad
 +import android.graphics.drawable.Drawable;
 +import android.graphics.drawable.GradientDrawable;
 +import android.graphics.drawable.LayerDrawable;
++import android.graphics.drawable.ShapeDrawable;
 +import android.view.MotionEvent;
 +import android.view.View;
 +import android.widget.FrameLayout;
@@ -6851,6 +7069,109 @@ index 00000000..1205e1ad
 +        View v = new View(activity); v.setBackground(gradient(true)); add(pages.get(1),v,106,1120,788,200); float top=bounds(v).top;
 +        discover(); apply(true); assertEquals(200,bounds(v).height(),.01f); assertEquals(bounds(content).bottom,bounds(v).bottom,.01f);
 +        assertEquals(bounds(content).width(),bounds(v).width(),.01f); apply(false); assertEquals(200,bounds(v).height(),.01f);
++    }
++    private static final int FOLD_WIDTH = 1248, FOLD_PAGE_HEIGHT = 1972, FOLD_VIEWER_HEIGHT = 1727;
++    private void installFoldPageGeometry(int pageHeight, int discoveryViewerHeight) {
++        content.measure(View.MeasureSpec.makeMeasureSpec(FOLD_WIDTH, View.MeasureSpec.EXACTLY),
++                View.MeasureSpec.makeMeasureSpec(FOLD_PAGE_HEIGHT, View.MeasureSpec.EXACTLY));
++        content.layout(0, 0, FOLD_WIDTH, FOLD_PAGE_HEIGHT);
++        viewer.layout(0, 110, FOLD_WIDTH, 110 + discoveryViewerHeight);
++        for (int i = 0; i < pages.size(); i++) {
++            FrameLayout page = pages.get(i);
++            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) page.getLayoutParams();
++            params.width = FOLD_WIDTH; params.height = pageHeight;
++            params.leftMargin = 0; params.topMargin = (i - 1) * pageHeight;
++            page.setLayoutParams(params);
++            page.measure(View.MeasureSpec.makeMeasureSpec(FOLD_WIDTH, View.MeasureSpec.EXACTLY),
++                    View.MeasureSpec.makeMeasureSpec(pageHeight, View.MeasureSpec.EXACTLY));
++            page.layout(0, (i - 1) * pageHeight, FOLD_WIDTH, i * pageHeight);
++        }
++        // The production ViewPager2 identifies its item even when its 1972 px page is
++        // taller than the 1727 px viewer. The test fixture uses the renderer's measured
++        // page fallback once, then models the final viewer viewport independently.
++        renderer.discover(viewer);
++        viewer.layout(0, 110, FOLD_WIDTH, 110 + FOLD_VIEWER_HEIGHT);
++    }
++    private FrameLayout mountedBottomGradient(FrameLayout page, boolean verifiable) {
++        FrameLayout host = new FrameLayout(activity); host.setTag("clips_bottom_legibility_gradient_component");
++        add(page, host, 80, 1457, 1088, 496);
++        FrameLayout mount = new FrameLayout(activity);
++        mount.setBackground(verifiable ? new ShapeDrawable() : new android.graphics.drawable.ColorDrawable(Color.BLACK));
++        add(host, mount, 0, 0, 1088, 496);
++        return host;
++    }
++    private void positionFoldPages(float fraction) {
++        int distance = Math.round(fraction * FOLD_PAGE_HEIGHT);
++        for (int i = 0; i < pages.size(); i++) {
++            int top = (i - 1) * FOLD_PAGE_HEIGHT - distance;
++            pages.get(i).layout(0, top, FOLD_WIDTH, top + FOLD_PAGE_HEIGHT);
++        }
++    }
++    @Test public void verifiedPageBottomGradientIsExpandedWhileOffscreenAndThroughSwipeReturn() {
++        installFoldPageGeometry(FOLD_PAGE_HEIGHT, 1855);
++        FrameLayout[] gradients = new FrameLayout[pages.size()];
++        RectF[] nativeBounds = new RectF[pages.size()];
++        Drawable[] mounted = new Drawable[pages.size()];
++        Drawable.Callback[] callbacks = new Drawable.Callback[pages.size()];
++        float[] sx = new float[pages.size()], sy = new float[pages.size()], tx = new float[pages.size()], ty = new float[pages.size()];
++        for (int i = 0; i < pages.size(); i++) {
++            gradients[i] = mountedBottomGradient(pages.get(i), true);
++            FrameLayout mount = (FrameLayout) gradients[i].getChildAt(0);
++            mounted[i] = mount.getBackground(); callbacks[i] = mounted[i].getCallback();
++            sx[i] = gradients[i].getScaleX(); sy[i] = gradients[i].getScaleY();
++            tx[i] = gradients[i].getTranslationX(); ty[i] = gradients[i].getTranslationY();
++            nativeBounds[i] = bounds(gradients[i]);
++        }
++        scrim.discover(renderer, viewer);
++        RectF viewport = bounds(content);
++        apply(true); // Preload all three items before the next item has entered the viewport.
++        for (int i = 0; i < gradients.length; i++) {
++            assertEquals("native page width must expand before first pixel", viewport.left, bounds(gradients[i]).left, .02f);
++            assertEquals("native page width must expand before first pixel", viewport.right, bounds(gradients[i]).right, .02f);
++            assertEquals(viewport.bottom + (i - 1) * FOLD_PAGE_HEIGHT, bounds(gradients[i]).bottom, .02f);
++        }
++        assertTrue("next page is still offscreen when its width is prepared", bounds(gradients[2]).top >= viewport.bottom);
++        StringBuilder diagnostics = new StringBuilder(); scrim.diagnostics(diagnostics);
++        assertTrue(diagnostics.toString(), diagnostics.toString().contains("scrim candidates=3"));
++        assertEquals(3, diagnostics.toString().split("reason=native-bottom-contrast", -1).length - 1);
++
++        float[] fractions = {0f, .1f, .3f, .5f, .7f, .9f, 1f, .9f, .7f, .5f, .3f, .1f, 0f};
++        for (float fraction : fractions) {
++            positionFoldPages(fraction); apply(true);
++            for (int i = 0; i < gradients.length; i++) {
++                int pageTop = (i - 1) * FOLD_PAGE_HEIGHT - Math.round(fraction * FOLD_PAGE_HEIGHT);
++                assertEquals(viewport.left, bounds(gradients[i]).left, .02f);
++                assertEquals(viewport.right, bounds(gradients[i]).right, .02f);
++                assertEquals(viewport.bottom + pageTop, bounds(gradients[i]).bottom, .03f);
++                assertSame("players stay attached to their native page", videos.get(i), pages.get(i).getChildAt(0));
++            }
++        }
++        apply(false);
++        for (int i = 0; i < gradients.length; i++) {
++            FrameLayout mount = (FrameLayout) gradients[i].getChildAt(0);
++            assertEquals(nativeBounds[i], bounds(gradients[i]));
++            assertEquals(sx[i], gradients[i].getScaleX(), 0f); assertEquals(sy[i], gradients[i].getScaleY(), 0f);
++            assertEquals(tx[i], gradients[i].getTranslationX(), 0f); assertEquals(ty[i], gradients[i].getTranslationY(), 0f);
++            assertSame(mounted[i], mount.getBackground()); assertSame(callbacks[i], mounted[i].getCallback());
++        }
++    }
++    @Test public void namedBottomGradientWithoutVerifiedShapePayloadStaysNativeWidth() {
++        installFoldPageGeometry(FOLD_PAGE_HEIGHT, 1855);
++        FrameLayout candidate = mountedBottomGradient(pages.get(2), false);
++        RectF before = bounds(candidate);
++        scrim.discover(renderer, viewer); apply(true);
++        assertEquals(before, bounds(candidate));
++        StringBuilder diagnostics = new StringBuilder(); scrim.diagnostics(diagnostics);
++        assertTrue(diagnostics.toString(), diagnostics.toString().contains("scrim candidates=0"));
++    }
++    @Test public void verifiedBottomGradientDoesNotBorrowAnIncoherentPageHeight() {
++        installFoldPageGeometry(2600, 2500);
++        FrameLayout candidate = mountedBottomGradient(pages.get(1), true);
++        RectF before = bounds(candidate);
++        scrim.discover(renderer, viewer); apply(true);
++        assertEquals(before, bounds(candidate));
++        StringBuilder diagnostics = new StringBuilder(); scrim.diagnostics(diagnostics);
++        assertTrue(diagnostics.toString(), diagnostics.toString().contains("scrim candidates=0"));
 +    }
 +    @Test public void fullHeightForegroundIsRemappedRatherThanOnlyLosingItsBorder() {
 +        FrameLayout v=overlay(pages.get(1));GradientDrawable original=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xAA000000,Color.TRANSPARENT,0xAA000000});
