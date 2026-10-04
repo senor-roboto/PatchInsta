@@ -6305,10 +6305,10 @@ index 00000000..534cb828
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
 new file mode 100644
-index 00000000..6ead894d
+index 00000000..fecab0bd
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
-@@ -0,0 +1,223 @@
+@@ -0,0 +1,225 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -6357,6 +6357,7 @@ index 00000000..6ead894d
 +        assertTrue(first, first.contains("pivotLocal=") && first.contains("pivotGlobal="));
 +        assertTrue(first, first.contains("preApplySourceGlobal=") && first.contains("pageOffsetNormalized="));
 +        assertClipWindow(first, 0, 0, 1248, 1972);
++        assertClipWindow("viewClipGlobal=RectF(-1.5258789E-5, 0.8403015, 1248.0, 1971.1598)", 0, 0, 1248, 1972);
 +        String before = playerLine(video);
 +        assertTrue(before, before.contains("size=952x1691"));
 +
@@ -6380,8 +6381,9 @@ index 00000000..6ead894d
 +    private String mappingLine(TextureView video) { return traceLine("mapping player=" + FoldReelsDiagnostics.id(video)); }
 +    private String playerLine(TextureView video) { return traceLine("player " + FoldReelsDiagnostics.id(video) + " "); }
 +    private void assertClipWindow(String line, float left, float top, float right, float bottom) {
++        String number = "[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?";
 +        java.util.regex.Matcher match = java.util.regex.Pattern.compile(
-+                "viewClipGlobal=RectF\\((-?[0-9.]+), (-?[0-9.]+), (-?[0-9.]+), (-?[0-9.]+)\\)").matcher(line);
++                "viewClipGlobal=RectF\\((" + number + "), (" + number + "), (" + number + "), (" + number + ")\\)").matcher(line);
 +        assertTrue(line, match.find());
 +        assertEquals(left, Float.parseFloat(match.group(1)), 1.5f);
 +        assertEquals(top, Float.parseFloat(match.group(2)), 1.5f);
