@@ -104,7 +104,7 @@ index 00000000..366f5395
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
 new file mode 100644
-index 00000000..27f0ccda
+index 00000000..9eca85ba
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReels.java
 @@ -0,0 +1,675 @@
@@ -509,7 +509,7 @@ index 00000000..27f0ccda
 +            final FoldReelsRenderer renderer = new FoldReelsRenderer(this::markDiscovery);
 +            final FoldReelsPager pager = new FoldReelsPager();
 +            final FoldReelsPauseShade pauseShade = new FoldReelsPauseShade();
-+            final FoldReelsControls controls = new FoldReelsControls();
++            final FoldReelsControls controls = new FoldReelsControls(FoldReelsChrome::resourceName, this::markDiscovery);
 +            final FoldReelsProgress progress = new FoldReelsProgress();
 +            final FoldReelsClipping clipping = new FoldReelsClipping();
 +            final FoldReelsChrome chrome = new FoldReelsChrome();
@@ -666,7 +666,7 @@ index 00000000..27f0ccda
 +                if (discoveryDirty || options != lastOptions || now - lastDiscovery >= 400) {
 +                    discoveryDirty = false; lastOptions = options; lastDiscovery = now;
 +                    guarded("renderer", () -> renderer.discover(viewer), renderer::restore);
-+                    guarded("controls", () -> controls.discover(viewer), controls::restore);
++                    guarded("controls", () -> controls.discover(renderer, viewer), controls::restore);
 +                    guarded("chrome", () -> chrome.discover(viewer, scope, p.tabs, p.crop), chrome::restore);
 +                    guarded("card", () -> card.discover(renderer, viewer), card::restore);
 +                    guarded("header", () -> header.discover(renderer, viewer, scope), header::restore);
@@ -1445,10 +1445,10 @@ index 00000000..95480aa4
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
 new file mode 100644
-index 00000000..28ac2100
+index 00000000..c08e2111
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
-@@ -0,0 +1,368 @@
+@@ -0,0 +1,383 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1474,7 +1474,7 @@ index 00000000..28ac2100
 +final class FoldReelsControls {
 +    enum Actions { ALL, COMMENT_ONLY, NONE }
 +    private Actions mode = Actions.ALL;
-+    private final FoldReelsVisibility visibility = new FoldReelsVisibility();
++    private final FoldReelsVisibility visibility;
 +    private final IdentityHashMap<View, Integer> masks = new IdentityHashMap<>();
 +    private static final int COMMENT = 2, MEDIA = 1 << 20;
 +    private final WeakHashMap<ViewGroup, Rail> rails = new WeakHashMap<>();
@@ -1491,14 +1491,25 @@ index 00000000..28ac2100
 +    private MotionEvent down, last;
 +    private boolean forwarding, swiping;
 +    private float pagerX, pagerY;
-+    FoldReelsControls() { this(FoldReelsChrome::resourceName); }
-+    FoldReelsControls(Function<View, String> names) { this.names = names; }
++    FoldReelsControls() { this(FoldReelsChrome::resourceName, () -> {}); }
++    FoldReelsControls(Function<View, String> names) { this(names, () -> {}); }
++    FoldReelsControls(Function<View, String> names, Runnable changed) {
++        this.names = names; visibility = new FoldReelsVisibility(changed);
++    }
 +    String status() { return "rails=" + rails.size() + " moved=" + moved + " mode=" + mode + " hidden=" + visibility.size() + " touch=" + (down != null); }
 +    int railCount() { return rails.size(); }
 +
-+    void discover(View viewer) {
-+        generation++; nodes = 0; candidates.clear(); masks.clear();
-+        inspect(viewer, viewer, 0);
++    void discover(FoldReelsRenderer renderer, View viewer) {
++        generation++; candidates.clear(); masks.clear();
++        IdentityHashMap<View, Boolean> scopes = new IdentityHashMap<>();
++        renderer.visitPresentation((page, scope) -> {
++            // Only inspect renderer-anchored page scopes. A shared viewer walk can
++            // exhaust its budget in one page before reaching the next one.
++            if (page == null || scope == null || !FoldReelsViews.descendant(page, viewer)
++                    || !FoldReelsViews.descendant(scope, viewer) || scopes.put(scope, Boolean.TRUE) != null) return;
++            nodes = 0;
++            inspect(scope, viewer, 0);
++        }, viewer);
 +        for (Candidate c : candidates) {
 +            boolean keep = true;
 +            for (Candidate other : candidates) {
@@ -1538,10 +1549,14 @@ index 00000000..28ac2100
 +            if ((mask & MEDIA) == 0 && (mask & COMMENT) != 0 && Integer.bitCount(mask) >= 3
 +                    && view.getWidth() > 0 && view.getWidth() <= 160 * density
 +                    && view.getWidth() < viewer.getWidth() * .35f && view.getHeight() >= 96 * density
-+                    && view.getHeight() > view.getWidth() * 1.35f) candidates.add(new Candidate(group, mask));
++                    && view.getHeight() > view.getWidth() * 1.35f) addCandidate(group, mask);
 +        }
 +        masks.put(view, mask);
 +        return mask;
++    }
++    private void addCandidate(ViewGroup group, int mask) {
++        for (Candidate candidate : candidates) if (candidate.view == group) return;
++        candidates.add(new Candidate(group, mask));
 +    }
 +    private void clickable(View view, ArrayList<WeakReference<View>> targets, int depth) {
 +        if (depth > 20) return;
@@ -4485,10 +4500,10 @@ index 00000000..55d6230f
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsVisibility.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsVisibility.java
 new file mode 100644
-index 00000000..38dd7922
+index 00000000..5b9dca45
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsVisibility.java
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,48 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -4500,7 +4515,10 @@ index 00000000..38dd7922
 +/** Reversible INVISIBLE leases. No view is retained by its state; detach restores immediately. */
 +final class FoldReelsVisibility implements View.OnAttachStateChangeListener {
 +    private final WeakHashMap<View, State> states = new WeakHashMap<>();
++    private final Runnable changed;
 +    private long frame;
++    FoldReelsVisibility() { this(() -> {}); }
++    FoldReelsVisibility(Runnable changed) { this.changed = changed; }
 +    void begin() { frame++; }
 +    void hide(View view) {
 +        if (view == null || !view.isAttachedToWindow()) return;
@@ -4527,8 +4545,11 @@ index 00000000..38dd7922
 +        if (view.getVisibility() == View.INVISIBLE) view.setVisibility(state.nativeVisibility);
 +        view.removeOnAttachStateChangeListener(this);
 +    }
-+    @Override public void onViewAttachedToWindow(View view) {}
-+    @Override public void onViewDetachedFromWindow(View view) { State state = states.remove(view); if (state != null) release(view, state); }
++    @Override public void onViewAttachedToWindow(View view) { changed.run(); }
++    @Override public void onViewDetachedFromWindow(View view) {
++        State state = states.remove(view);
++        if (state != null) { release(view, state); changed.run(); }
++    }
 +    private static final class State { int nativeVisibility; long used; }
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/settings/Settings.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/settings/Settings.java
@@ -5067,7 +5088,7 @@ index 00000000..ba386552
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java
 new file mode 100644
-index 00000000..710d74ae
+index 00000000..465db599
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsLithoTest.java
 @@ -0,0 +1,197 @@
@@ -5117,7 +5138,7 @@ index 00000000..710d74ae
 +        add(textHost,captionText,0,17,735,113);measureCaptionText();
 +    }
 +    void measureCaptionText(){captionText.measure(View.MeasureSpec.makeMeasureSpec(735,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(113,View.MeasureSpec.AT_MOST));captionText.layout(0,17,735,17+captionText.getMeasuredHeight());}
-+    void discover(){renderer.discover(viewer);controls.discover(viewer);metadata.discover(renderer,viewer,controls);}
++    void discover(){renderer.discover(viewer);controls.discover(renderer,viewer);metadata.discover(renderer,viewer,controls);}
 +    void mode(FoldReelsMetadata.Mode mode){clipping.beginFrame();metadata.frame(viewer,bounds(viewer),mode,controls,clipping);clipping.endFrame();}
 +    String report(){StringBuilder out=new StringBuilder();metadata.diagnostics(out);return out.toString();}
 +    @Test public void mountedGroupsAreSelectedWithoutPromotingMediaInfoOrLosingFollow() {
@@ -5932,10 +5953,10 @@ index 00000000..af0dc47a
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPresentationTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPresentationTest.java
 new file mode 100644
-index 00000000..ce72cec1
+index 00000000..0d96e69b
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPresentationTest.java
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,235 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.graphics.Color;
@@ -5971,44 +5992,67 @@ index 00000000..ce72cec1
 +        add(anonymous, comment, 0, 0, 80, 60);
 +        TextView count = new TextView(activity); add(anonymous, count, 0, 60, 80, 25);
 +        View unknown = new View(activity); add(rail, unknown, 0, 400, 80, 40);
-+        controls.discover(viewer); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
 +        assertEquals(View.VISIBLE, cell.getVisibility()); assertTrue(comment.isShown()); assertTrue(count.isShown());
 +        assertEquals(View.INVISIBLE, unknown.getVisibility()); assertEquals(View.INVISIBLE, rail.getChildAt(0).getVisibility());
 +        controlMode(FoldReelsControls.Actions.ALL); assertEquals(View.VISIBLE, unknown.getVisibility());
 +    }
 +    @Test public void actionModesWorkEvenWithEdgeMovementDisabled() {
-+        FrameLayout rail = rail(); controls.discover(viewer);
++        FrameLayout rail = rail(); discoverControls();
 +        clipping.beginFrame(); controls.frame(viewer, bounds(viewer), false, false, FoldReelsControls.Actions.COMMENT_ONLY, clipping); clipping.endFrame();
 +        assertEquals(0, rail.getTranslationX(), .001f); assertEquals(View.INVISIBLE, rail.getChildAt(0).getVisibility()); assertTrue(rail.getChildAt(1).isShown());
 +    }
 +    @Test public void noneAndAllRestoreExactNativeVisibilities() {
 +        FrameLayout rail = rail(); rail.getChildAt(0).setVisibility(View.INVISIBLE); rail.getChildAt(2).setVisibility(View.GONE);
-+        controls.discover(viewer); controlMode(FoldReelsControls.Actions.COMMENT_ONLY); controlMode(FoldReelsControls.Actions.NONE);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY); controlMode(FoldReelsControls.Actions.NONE);
 +        assertEquals(View.INVISIBLE, rail.getVisibility());
 +        controlMode(FoldReelsControls.Actions.ALL);
 +        assertEquals(View.VISIBLE, rail.getVisibility()); assertEquals(View.INVISIBLE, rail.getChildAt(0).getVisibility()); assertEquals(View.GONE, rail.getChildAt(2).getVisibility());
 +    }
 +    @Test public void hidingAnActiveActionCancelsItsNativeTouch() {
 +        FrameLayout rail = rail(); AtomicInteger clicks = new AtomicInteger(); rail.getChildAt(0).setOnClickListener(v -> clicks.incrementAndGet());
-+        controls.discover(viewer); controlMode(FoldReelsControls.Actions.ALL); float[] point = localCentre(rail.getChildAt(0));
++        discoverControls(); controlMode(FoldReelsControls.Actions.ALL); float[] point = localCentre(rail.getChildAt(0));
 +        send(MotionEvent.ACTION_DOWN, point[0], point[1]); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
 +        send(MotionEvent.ACTION_UP, point[0], point[1]); assertEquals(0, clicks.get()); assertFalse(rail.getChildAt(0).isPressed());
 +    }
-+    @Test public void detachedRailDoesNotCarryHiddenStateToItsNextBinding() {
-+        FrameLayout rail = rail(); controls.discover(viewer); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++    @Test public void reboundRailReclassifiesChangedRoleBeforeNextFrame() {
++        FrameLayout rail = rail(); discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        View recycled = rail.getChildAt(0);
 +        FrameLayout parent = (FrameLayout) rail.getParent(); parent.removeView(rail);
 +        for (int i=0;i<rail.getChildCount();i++) assertEquals(View.VISIBLE, rail.getChildAt(i).getVisibility());
-+        add(parent, rail, 620, 300, 80, 440); controls.discover(viewer); controlMode(FoldReelsControls.Actions.ALL);
-+        assertTrue(rail.getChildAt(0).isShown());
++        recycled.setTag("clips_comment_button");
++        add(parent, rail, 620, 300, 80, 440); discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(View.VISIBLE, recycled.getVisibility()); assertEquals(View.VISIBLE, rail.getChildAt(1).getVisibility());
++        assertEquals(View.INVISIBLE, rail.getChildAt(2).getVisibility()); assertEquals(View.INVISIBLE, rail.getChildAt(3).getVisibility());
++    }
++    @Test public void detachedAndReboundActionRestoresThenStaysNativeOutsidePageScopes() {
++        FrameLayout rail = rail(); discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        View recycled = rail.getChildAt(0), comment = rail.getChildAt(1); assertEquals(View.INVISIBLE, recycled.getVisibility());
++        int changesBeforeDetach = invalidations.get();
++        rail.removeView(recycled);
++        assertEquals(View.VISIBLE, recycled.getVisibility());
++        assertTrue(invalidations.get() > changesBeforeDetach);
++
++        recycled.setTag("clips_share_button");
++        FrameLayout overlay = new FrameLayout(activity); add(content, overlay, 0, 0, 80, 100);
++        add(overlay, recycled, 0, 0, 80, 60);
++        renderer.discover(viewer); controls.discover(renderer, viewer);
++        controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals("rebound view outside renderer page scopes must not receive an old hide lease",
++                View.VISIBLE, recycled.getVisibility());
++        assertEquals(View.VISIBLE, comment.getVisibility()); assertEquals(View.INVISIBLE, rail.getChildAt(1).getVisibility());
++        controls.restore();
++        for (int i = 0; i < rail.getChildCount(); i++) assertEquals(View.VISIBLE, rail.getChildAt(i).getVisibility());
++        assertEquals(0, rail.getTranslationX(), .001f); assertEquals(0, rail.getTranslationY(), .001f);
 +    }
 +    @Test public void unknownUnqualifiedControlsStayNative() {
 +        FrameLayout unknown = new FrameLayout(activity); add(pages.get(1), unknown, 800, 300, 80, 440);
-+        add(unknown, new View(activity), 0, 0, 80, 80); controls.discover(viewer); controlMode(FoldReelsControls.Actions.NONE);
++        add(unknown, new View(activity), 0, 0, 80, 80); discoverControls(); controlMode(FoldReelsControls.Actions.NONE);
 +        assertEquals(0, controls.railCount()); assertTrue(unknown.isShown());
 +    }
 +    @Test public void commentOnlyKeepsTheMovedNativeClickAndSwipeHandoff() {
 +        FrameLayout rail = rail(); AtomicInteger clicks = new AtomicInteger(); rail.getChildAt(1).setOnClickListener(v -> clicks.incrementAndGet());
-+        controls.discover(viewer); controlMode(FoldReelsControls.Actions.COMMENT_ONLY); float[] point = localCentre(rail.getChildAt(1));
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY); float[] point = localCentre(rail.getChildAt(1));
 +        send(MotionEvent.ACTION_DOWN, point[0], point[1]); send(MotionEvent.ACTION_UP, point[0], point[1]); assertEquals(1, clicks.get());
 +        send(MotionEvent.ACTION_DOWN, point[0], point[1]); send(MotionEvent.ACTION_MOVE, point[0], point[1]-100); send(MotionEvent.ACTION_UP, point[0], point[1]-100);
 +        assertEquals(1, clicks.get()); assertTrue(viewer.nativeActions.contains(MotionEvent.ACTION_MOVE));
@@ -6058,7 +6102,7 @@ index 00000000..ce72cec1
 +        username = new TextView(activity); username.setClickable(true); add(identity,username,80,0,300,60);
 +        follow = new TextView(activity); follow.setTag("follow_button"); follow.setClickable(true); add(identity,follow,440,0,150,60);
 +        caption = new TextView(activity); caption.setTag("caption_text_view"); caption.setMaxLines(3); caption.setEllipsize(TextUtils.TruncateAt.MIDDLE); caption.setClickable(true);
-+        add(narrow,caption,0,1220,760,100); renderer.discover(viewer); controls.discover(viewer); metadata.discover(renderer,viewer,controls);
++        add(narrow,caption,0,1220,760,100); renderer.discover(viewer); controls.discover(renderer,viewer); metadata.discover(renderer,viewer,controls);
 +    }
 +    void metadataMode(FoldReelsMetadata.Mode mode) {
 +        clipping.beginFrame(); metadata.frame(viewer,bounds(viewer),mode,controls,clipping); clipping.endFrame();
@@ -6305,10 +6349,10 @@ index 00000000..534cb828
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
 new file mode 100644
-index 00000000..fecab0bd
+index 00000000..5ec1352f
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,251 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -6439,23 +6483,49 @@ index 00000000..fecab0bd
 +        frame(fullViewport(), true); assertEquals(1000f / 788, videos.get(1).getScaleX(), .001f);
 +    }
 +    @Test public void movesTheWholeRailAtSevenOrFourteenDpWithoutDrift() {
-+        FrameLayout rail = rail(); controls.discover(viewer); assertEquals(1, controls.railCount());
++        FrameLayout rail = rail(); discoverControls(); assertEquals(1, controls.railCount());
 +        for (int i = 0; i < 30; i++) controlFrame(false, true);
 +        assertEquals(bounds(viewer).right - 7, bounds(rail).right, .001f);
 +        controlFrame(true, true); assertEquals(bounds(viewer).right - 14, bounds(rail).right, .001f);
 +        controlFrame(false, false); assertEquals(0, rail.getTranslationX(), .001f);
 +    }
++    @Test public void actionDiscoveryHasAPerPageBudgetAcrossBothVisibleNeighbours() {
++        FrameLayout current = railOnPage(1), next = railOnPage(2);
++        addNoiseBeforeRail(pages.get(1), 850); addNoiseBeforeRail(pages.get(2), 850);
++        // Each anchored page is below 1600 nodes; the viewer combined is above it.
++        renderer.discover(viewer); controls.discover(renderer, viewer);
++        assertEquals(2, controls.railCount());
++        for (float distance : new float[]{0, 350, 700, 1050, 1400, 1050, 700, 350, 0}) {
++            swipe(distance); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++            for (FrameLayout rail : new FrameLayout[]{current, next}) {
++                assertEquals(View.INVISIBLE, rail.getChildAt(0).getVisibility());
++                assertEquals(View.VISIBLE, rail.getChildAt(1).getVisibility());
++                assertEquals(View.INVISIBLE, rail.getChildAt(2).getVisibility());
++                assertEquals(View.INVISIBLE, rail.getChildAt(3).getVisibility());
++            }
++        }
++        controls.restore();
++        for (FrameLayout rail : new FrameLayout[]{current, next}) {
++            for (int i = 0; i < rail.getChildCount(); i++) assertEquals(View.VISIBLE, rail.getChildAt(i).getVisibility());
++            assertEquals(0, rail.getTranslationX(), .001f); assertEquals(0, rail.getTranslationY(), .001f);
++        }
++    }
++    private void addNoiseBeforeRail(FrameLayout page, int count) {
++        FrameLayout noise = new FrameLayout(activity);
++        page.addView(noise, 1, new FrameLayout.LayoutParams(10, 10)); noise.layout(0, 0, 10, 10);
++        for (int i = 0; i < count; i++) noise.addView(new View(activity), new FrameLayout.LayoutParams(1, 1));
++    }
 +    @Test public void aMovedCommentBeyondItsOldParentStillReceivesOneNativeClick() {
 +        FrameLayout rail = rail(); AtomicInteger clicks = new AtomicInteger();
 +        rail.getChildAt(1).setOnClickListener(v -> clicks.incrementAndGet());
-+        controls.discover(viewer); controlFrame(false, true);
++        discoverControls(); controlFrame(false, true);
 +        float[] p = localCentre(rail.getChildAt(1)); assertTrue(p[0] > 800);
 +        send(MotionEvent.ACTION_DOWN, p[0], p[1]); send(MotionEvent.ACTION_UP, p[0], p[1]);
 +        assertEquals(1, clicks.get()); assertTrue(viewer.nativeActions.isEmpty());
 +    }
 +    @Test public void draggingFromAButtonCancelsItsClickAndHandsACompleteStreamToThePager() {
 +        FrameLayout rail = rail(); AtomicInteger clicks = new AtomicInteger(); rail.getChildAt(1).setOnClickListener(v -> clicks.incrementAndGet());
-+        controls.discover(viewer); controlFrame(false, true); float[] p = localCentre(rail.getChildAt(1));
++        discoverControls(); controlFrame(false, true); float[] p = localCentre(rail.getChildAt(1));
 +        send(MotionEvent.ACTION_DOWN, p[0], p[1]); send(MotionEvent.ACTION_MOVE, p[0], p[1] - 120); send(MotionEvent.ACTION_UP, p[0], p[1] - 120);
 +        assertEquals(0, clicks.get());
 +        assertEquals(Arrays.asList(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP), viewer.nativeActions);
@@ -6468,14 +6538,14 @@ index 00000000..fecab0bd
 +        });
 +        View nativeTarget=new View(activity);nativeTarget.setOnTouchListener((v,e)->detector.onTouchEvent(e));
 +        viewer.addView(nativeTarget,0,new FrameLayout.LayoutParams(1000,1400));nativeTarget.layout(0,0,1000,1400);
-+        controls.discover(viewer);controlFrame(false,true);float[] p=localCentre(rail.getChildAt(1));
++        discoverControls();controlFrame(false,true);float[] p=localCentre(rail.getChildAt(1));
 +        send(MotionEvent.ACTION_DOWN,p[0],p[1]);send(MotionEvent.ACTION_UP,p[0],p[1]-120);
 +        assertEquals(0,clicks.get());assertEquals(0,nativeTaps.get());assertEquals(Arrays.asList(MotionEvent.ACTION_DOWN,MotionEvent.ACTION_MOVE,MotionEvent.ACTION_UP),viewer.nativeActions);
 +    }
 +    @Test public void aNativeSheetInsideTheViewerHasPriorityOverMovedControls() {
 +        FrameLayout rail = rail(); AtomicInteger comments = new AtomicInteger(), sheetClicks = new AtomicInteger();
 +        rail.getChildAt(1).setOnClickListener(v -> comments.incrementAndGet());
-+        controls.discover(viewer); controlFrame(false, true); float[] p = localCentre(rail.getChildAt(1));
++        discoverControls(); controlFrame(false, true); float[] p = localCentre(rail.getChildAt(1));
 +        View sheet = new View(activity); sheet.setBackgroundColor(android.graphics.Color.BLACK);
 +        sheet.setOnClickListener(v -> sheetClicks.incrementAndGet()); add(viewer, sheet, 0, 0, 1000, 1400);
 +        send(MotionEvent.ACTION_DOWN, p[0], p[1]); send(MotionEvent.ACTION_UP, p[0], p[1]);
@@ -6483,12 +6553,12 @@ index 00000000..fecab0bd
 +    }
 +    @Test public void suspendingDuringATouchCancelsTheNativeButton() {
 +        FrameLayout rail = rail(); AtomicInteger clicks = new AtomicInteger(); rail.getChildAt(1).setOnClickListener(v -> clicks.incrementAndGet());
-+        controls.discover(viewer); controlFrame(false, true); float[] p = localCentre(rail.getChildAt(1));
++        discoverControls(); controlFrame(false, true); float[] p = localCentre(rail.getChildAt(1));
 +        send(MotionEvent.ACTION_DOWN, p[0], p[1]); controls.restore(); send(MotionEvent.ACTION_UP, p[0], p[1]);
 +        assertEquals(0, clicks.get()); assertFalse(rail.getChildAt(1).isPressed());
 +    }
 +    @Test public void disablingVideoCropDoesNotCloseClippingStillUsedByControls() {
-+        FrameLayout rail = rail(); renderer.discover(viewer); controls.discover(viewer);
++        FrameLayout rail = rail(); renderer.discover(viewer); controls.discover(renderer, viewer);
 +        clipping.beginFrame(); renderer.frame(viewer, bounds(viewer), content, true, 1, clipping); controls.frame(viewer, bounds(viewer), false, true, clipping); clipping.endFrame();
 +        clipping.beginFrame(); renderer.frame(viewer, bounds(viewer), content, false, 1, clipping); controls.frame(viewer, bounds(viewer), false, true, clipping); clipping.endFrame();
 +        assertFalse(((FrameLayout) rail.getParent()).getClipChildren());
@@ -6499,7 +6569,7 @@ index 00000000..fecab0bd
 +        FrameLayout rail = rail(); FrameLayout tabs = new FrameLayout(activity); tabs.setTag("tab_bar");
 +        add(content, tabs, 0, 1400, 1000, 100); add(tabs, new View(activity), 0, 0, 100, 100); add(tabs, new View(activity), 200, 0, 100, 100);
 +        chrome.discover(viewer, content, true, true); assertTrue(chrome.frame());
-+        controls.discover(viewer); controlMode(FoldReelsControls.Actions.ALL);
++        discoverControls(); controlMode(FoldReelsControls.Actions.ALL);
 +        assertEquals(View.INVISIBLE, tabs.getVisibility());
 +        for (int i = 0; i < 4; i++) assertEquals(View.VISIBLE, rail.getChildAt(i).getVisibility());
 +        chrome.discover(viewer, content, false, true); assertFalse(chrome.frame());
@@ -6510,7 +6580,7 @@ index 00000000..fecab0bd
 +    }
 +    @Test public void aParentWithACommentCannotBeHiddenEvenIfItsNameMatchesAnOptionalAction() {
 +        FrameLayout parent = rail(); parent.setTag("clips_share_button_container");
-+        controls.discover(viewer); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
 +        assertEquals(View.VISIBLE, parent.getVisibility());
 +        assertEquals(View.VISIBLE, parent.getChildAt(1).getVisibility());
 +        assertEquals(View.INVISIBLE, parent.getChildAt(0).getVisibility());
@@ -6628,10 +6698,10 @@ index 00000000..8d53cf63
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsTestFixture.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsTestFixture.java
 new file mode 100644
-index 00000000..952a830f
+index 00000000..382d2efc
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsTestFixture.java
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,128 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -6668,7 +6738,7 @@ index 00000000..952a830f
 +    final FoldReelsClipping clipping = new FoldReelsClipping();
 +    final AtomicInteger invalidations = new AtomicInteger();
 +    final FoldReelsRenderer renderer = new FoldReelsRenderer(invalidations::incrementAndGet, FoldReelsTestFixture::name);
-+    final FoldReelsControls controls = new FoldReelsControls(FoldReelsTestFixture::name);
++    final FoldReelsControls controls = new FoldReelsControls(FoldReelsTestFixture::name, invalidations::incrementAndGet);
 +    final FoldReelsChrome chrome = new FoldReelsChrome(FoldReelsTestFixture::name);
 +
 +    static String name(View view) { return view.getTag() instanceof String ? (String) view.getTag() : ""; }
@@ -6719,8 +6789,9 @@ index 00000000..952a830f
 +
 +
 +
-+    FrameLayout rail() {
-+        FrameLayout narrow = new FrameLayout(activity); add(pages.get(1), narrow, 0, 0, 800, 1400);
++    FrameLayout rail() { return railOnPage(1); }
++    FrameLayout railOnPage(int pageIndex) {
++        FrameLayout narrow = new FrameLayout(activity); add(pages.get(pageIndex), narrow, 0, 0, 800, 1400);
 +        FrameLayout rail = new FrameLayout(activity); add(narrow, rail, 620, 300, 80, 440);
 +        for (int i = 0; i < 4; i++) {
 +            View button = new View(activity); button.setTag(new String[]{"clips_like_button", "clips_comment_button", "clips_share_button", "clips_save_button"}[i]);
@@ -6728,6 +6799,7 @@ index 00000000..952a830f
 +        }
 +        return rail;
 +    }
++    void discoverControls() { renderer.discover(viewer); controls.discover(renderer, viewer); }
 +    void controlFrame(boolean inner, boolean enabled) {
 +        clipping.beginFrame(); controls.frame(viewer, bounds(viewer), inner, enabled, clipping); clipping.endFrame();
 +    }
@@ -6831,7 +6903,7 @@ index 00000000..35a8cc07
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsUpdateTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsUpdateTest.java
 new file mode 100644
-index 00000000..b5351574
+index 00000000..a59407ae
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsUpdateTest.java
 @@ -0,0 +1,154 @@
@@ -6942,7 +7014,7 @@ index 00000000..b5351574
 +    @Test public void siblingOverlayOutsideVideoAnchorIsDiscoveredAndGetsFullAvailableWidth(){
 +        wrapper();rail();FrameLayout overlay=new FrameLayout(activity);add(pages.get(1),overlay,106,0,788,1400);FrameLayout row=identity(overlay,true);
 +        TextView caption=new TextView(activity);caption.setTag("clips_caption");caption.setMaxLines(3);add(overlay,caption,0,1220,760,100);
-+        renderer.discover(viewer);controls.discover(viewer);metadata.discover(renderer,viewer,controls);metadataFrame();
++        renderer.discover(viewer);controls.discover(renderer,viewer);metadata.discover(renderer,viewer,controls);metadataFrame();
 +        assertEquals(1,caption.getMaxLines());assertEquals(bounds(viewer).left+12,bounds(row.getChildAt(0)).left,.01f);
 +        assertTrue(row.getLayoutParams().width>760);assertTrue(bounds(row.getChildAt(2)).right<bounds(viewer).right-80);
 +    }
