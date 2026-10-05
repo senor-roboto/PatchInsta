@@ -1,0 +1,113 @@
+diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
+index c08e2111..a13a89fc 100644
+--- a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
++++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
+@@ -27,6 +27,7 @@ final class FoldReelsControls {
+     private final IdentityHashMap<View, Integer> masks = new IdentityHashMap<>();
+     private static final int COMMENT = 2, MEDIA = 1 << 20;
+     private final WeakHashMap<ViewGroup, Rail> rails = new WeakHashMap<>();
++    private final WeakHashMap<ViewGroup, WeakReference<View>> nativeActionOwners = new WeakHashMap<>();
+     private final ArrayList<Candidate> candidates = new ArrayList<>();
+     private final Function<View, String> names;
+     private final RectF work = new RectF(), viewerBounds = new RectF();
+@@ -45,11 +46,11 @@ final class FoldReelsControls {
+     FoldReelsControls(Function<View, String> names, Runnable changed) {
+         this.names = names; visibility = new FoldReelsVisibility(changed);
+     }
+-    String status() { return "rails=" + rails.size() + " moved=" + moved + " mode=" + mode + " hidden=" + visibility.size() + " touch=" + (down != null); }
++    String status() { return "rails=" + rails.size() + " moved=" + moved + " mode=" + mode + " hidden=" + visibility.size() + " touch=" + (down != null) + " nativeUfi=" + nativeActionOwners.size(); }
+     int railCount() { return rails.size(); }
+ 
+     void discover(FoldReelsRenderer renderer, View viewer) {
+-        generation++; candidates.clear(); masks.clear();
++        generation++; candidates.clear(); masks.clear(); nativeActionOwners.clear();
+         IdentityHashMap<View, Boolean> scopes = new IdentityHashMap<>();
+         renderer.visitPresentation((page, scope) -> {
+             // Only inspect renderer-anchored page scopes. A shared viewer walk can
+@@ -57,7 +58,7 @@ final class FoldReelsControls {
+             if (page == null || scope == null || !FoldReelsViews.descendant(page, viewer)
+                     || !FoldReelsViews.descendant(scope, viewer) || scopes.put(scope, Boolean.TRUE) != null) return;
+             nodes = 0;
+-            inspect(scope, viewer, 0);
++            inspect(scope, viewer, page, 0);
+         }, viewer);
+         for (Candidate c : candidates) {
+             boolean keep = true;
+@@ -80,7 +81,7 @@ final class FoldReelsControls {
+             if (e.getValue().seen != generation) { if (active.get() == e.getKey()) cancel(); e.getValue().restore(e.getKey()); it.remove(); }
+         }
+     }
+-    private int inspect(View view, View viewer, int depth) {
++    private int inspect(View view, View viewer, View page, int depth) {
+         if (++nodes > 1600 || depth > 40) return MEDIA; // Incomplete groups cannot qualify.
+         if (view instanceof TextureView || view instanceof SurfaceView) return MEDIA;
+         String name = names.apply(view);
+@@ -92,8 +93,12 @@ final class FoldReelsControls {
+         if (view instanceof ViewGroup) {
+             ViewGroup group = (ViewGroup) view;
+             int descendants = 0;
+-            for (int i = 0; i < group.getChildCount(); i++) descendants |= inspect(group.getChildAt(i), viewer, depth + 1);
++            for (int i = 0; i < group.getChildCount(); i++) descendants |= inspect(group.getChildAt(i), viewer, page, depth + 1);
+             if (descendants != 0) mask = descendants; // Child semantics beat a misleading wrapper name.
++            if ((mask & MEDIA) == 0 && "clips_ufi_component".equals(name)
++                    && FoldReelsViews.classIs(view, "com.facebook.litho.ComponentHost")
++                    && FoldReelsViews.descendant(view, page))
++                nativeActionOwners.put(group, new WeakReference<>(page));
+             float density = view.getResources().getDisplayMetrics().density;
+             if ((mask & MEDIA) == 0 && (mask & COMMENT) != 0 && Integer.bitCount(mask) >= 3
+                     && view.getWidth() > 0 && view.getWidth() <= 160 * density
+@@ -103,6 +108,27 @@ final class FoldReelsControls {
+         masks.put(view, mask);
+         return mask;
+     }
++    private int nativeActionRole(String name) {
++        switch (name) {
++            case "comment_button": case "comment_count": return COMMENT;
++            case "like_button": case "like_count": return 1;
++            case "direct_share_button": case "repost_count": return 4;
++            case "save_button": case "save_count": return 8;
++            case "clips_ufi_more_button_component": return 16;
++            default: return 0;
++        }
++    }
++    private int hideMountedActions(View view, int depth) {
++        if (++nodes > 1600 || depth > 40 || view instanceof TextureView || view instanceof SurfaceView) return MEDIA;
++        int role = nativeActionRole(names.apply(view)), mask = role;
++        if (view instanceof ViewGroup) {
++            ViewGroup group = (ViewGroup) view;
++            for (int i = 0; i < group.getChildCount(); i++) mask |= hideMountedActions(group.getChildAt(i), depth + 1);
++        }
++        if (role != 0 && (mask & MEDIA) == 0
++                && (mode == Actions.NONE || (mask & COMMENT) == 0)) visibility.hide(view);
++        return mask;
++    }
+     private void addCandidate(ViewGroup group, int mask) {
+         for (Candidate candidate : candidates) if (candidate.view == group) return;
+         candidates.add(new Candidate(group, mask));
+@@ -168,6 +194,17 @@ final class FoldReelsControls {
+ 
+         moved = 0; FoldReelsViews.bounds(viewer, viewerBounds, matrix);
+         if (interactive != null) viewerBounds.set(interactive);
++        // Litho can mount only the first cells of a neighbouring UFI column.
++        // Those named actions already have a native owner; they need not wait
++        // for a complete movable rail (comment plus three distinct roles).
++        for (Iterator<Map.Entry<ViewGroup, WeakReference<View>>> it = nativeActionOwners.entrySet().iterator(); it.hasNext();) {
++            Map.Entry<ViewGroup, WeakReference<View>> entry = it.next(); ViewGroup owner = entry.getKey(); View page = entry.getValue().get();
++            if (!"clips_ufi_component".equals(names.apply(owner))
++                    || !FoldReelsViews.classIs(owner, "com.facebook.litho.ComponentHost")
++                    || !owner.isAttachedToWindow() || page == null || !FoldReelsViews.descendant(page, viewer)
++                    || !FoldReelsViews.descendant(owner, page)) { it.remove(); continue; }
++            if (mode != Actions.ALL) { nodes = 0; hideMountedActions(owner, 0); }
++        }
+         float inset = (inner ? 14 : 7) * viewer.getResources().getDisplayMetrics().density;
+         // Stay inside the viewer's touch bounds; never put a control into the system gesture strip itself.
+         float wantedRight = Math.min(viewport.right, viewerBounds.right) - inset;
+@@ -361,7 +398,7 @@ final class FoldReelsControls {
+         if (down != null) down.recycle(); if (last != null) last.recycle();
+         down = last = null; swiping = false; pagerX = pagerY = 0; active.clear(); activeViewer.clear();
+     }
+-    void restore() { cancel(); visibility.restore(); candidates.clear(); masks.clear(); metadataTargets.clear(); progressTargets.clear(); for (Map.Entry<ViewGroup, Rail> e : rails.entrySet()) e.getValue().restore(e.getKey()); rails.clear(); moved = 0; }
++    void restore() { cancel(); visibility.restore(); candidates.clear(); masks.clear(); nativeActionOwners.clear(); metadataTargets.clear(); progressTargets.clear(); for (Map.Entry<ViewGroup, Rail> e : rails.entrySet()) e.getValue().restore(e.getKey()); rails.clear(); moved = 0; }
+     private static final class Candidate { final ViewGroup view; final int mask; Candidate(ViewGroup v, int m) { view = v; mask = m; } }
+     private static final class Rail {
+         final ArrayList<WeakReference<View>> targets = new ArrayList<>();

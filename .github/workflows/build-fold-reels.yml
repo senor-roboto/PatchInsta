@@ -7,6 +7,7 @@ on:
       - piko-fold-reels.patch
       - release.json
       - scripts/**
+      - diagnostics/mounted-controls-9e849b68.patch
       - .github/workflows/**
   workflow_dispatch:
 
@@ -56,13 +57,19 @@ jobs:
           java -cp upstream/tests/fold-reels/build FoldReelsPolicyTest
           python3 upstream/tests/fold-reels/check_mappings.py
           python3 -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Prove mounted-actions regressions against exact old controls
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/check_mounted_controls.py negative
       - name: Run Android scenarios, compile MPP and load it with Morphe
         working-directory: upstream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew :extensions:instagram:testReleaseUnitTest :patches:verifyFoldBundle --no-daemon --console=plain
       - name: Check every test report, bundle identity, ZIP and SHA-256
-        run: python3 scripts/bundle.py
+        run: |
+          python3 scripts/check_mounted_controls.py positive
+          python3 scripts/bundle.py
       - name: Preserve test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -72,6 +79,7 @@ jobs:
             upstream/extensions/instagram/build/test-results/testReleaseUnitTest/
             upstream/extensions/instagram/build/reports/tests/testReleaseUnitTest/
             upstream/patches/build/test-results/test/
+            controls-evidence/
             output/test-results.json
           retention-days: 30
       - name: Upload candidate kit for device validation

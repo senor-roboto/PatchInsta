@@ -1285,25 +1285,42 @@ index 00000000..706bbf92
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsClipping.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsClipping.java
 new file mode 100644
-index 00000000..52718942
+index 00000000..4c3d902d
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsClipping.java
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,183 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
++import android.graphics.Matrix;
 +import android.graphics.Rect;
++import android.graphics.RectF;
 +import android.view.View;
 +import android.view.ViewGroup;
 +import android.view.ViewParent;
++import android.widget.ImageView;
++import java.lang.ref.WeakReference;
 +import java.util.Iterator;
 +import java.util.Map;
++import java.util.Objects;
 +import java.util.WeakHashMap;
++import java.util.function.Predicate;
 +
 +/** Shared frame leases: video and controls cannot restore each other's ancestor clipping. */
 +final class FoldReelsClipping {
 +    private final WeakHashMap<ViewGroup, State> states = new WeakHashMap<>();
++    private final WeakHashMap<View, IndicatorClip> indicators = new WeakHashMap<>();
++    private final Predicate<View> refreshOwner, refreshIndicator;
 +    private long frame;
++    FoldReelsClipping() {
++        this(view -> FoldReelsViews.classIs(view, "instagram.features.clips.viewer.ui.ClipsSwipeRefreshLayout"),
++                view -> view instanceof ImageView && FoldReelsViews.classIs(view, "X.01ND")
++                        && ((ImageView) view).getDrawable() != null
++                        && "X.01NF".equals(((ImageView) view).getDrawable().getClass().getName()));
++    }
++    FoldReelsClipping(Predicate<View> refreshOwner, Predicate<View> refreshIndicator) {
++        this.refreshOwner = refreshOwner; this.refreshIndicator = refreshIndicator;
++    }
 +    void beginFrame() { frame++; }
 +    /** Include the visual host's padding/outline when drawing to its true window edges.
 +     * The window compositor remains the final boundary; native layout and touch bounds stay put. */
@@ -1335,10 +1352,101 @@ index 00000000..52718942
 +            Map.Entry<ViewGroup, State> e = it.next();
 +            if (e.getValue().used != frame || !e.getKey().isAttachedToWindow()) { e.getValue().restore(e.getKey()); it.remove(); }
 +        }
++        // Opening a media path also opens its native SwipeRefresh ancestor. Its
++        // verified indicator must retain the clipping that its old ancestry supplied.
++        for (ViewGroup owner : states.keySet()) {
++            if (!refreshOwner.test(owner)) continue;
++            View indicator = null; boolean ambiguous = false;
++            for (int i = 0; i < owner.getChildCount(); i++) {
++                View child = owner.getChildAt(i);
++                if (!refreshIndicator.test(child)) continue;
++                if (indicator != null) { ambiguous = true; break; }
++                indicator = child;
++            }
++            if (indicator == null || ambiguous) continue;
++            IndicatorClip clip = indicators.get(indicator);
++            if (clip != null && clip.owner.get() != owner) { clip.restore(indicator); indicators.remove(indicator); clip = null; }
++            if (clip == null) { clip = new IndicatorClip(owner, indicator); indicators.put(indicator, clip); }
++            clip.capture(indicator);
++            if (clip.nativeClip(indicator, states)) { clip.apply(indicator); clip.used = frame; }
++        }
++        for (Iterator<Map.Entry<View, IndicatorClip>> it = indicators.entrySet().iterator(); it.hasNext();) {
++            Map.Entry<View, IndicatorClip> e = it.next(); View child = e.getKey(); IndicatorClip clip = e.getValue();
++            if (clip.used != frame || !child.isAttachedToWindow() || child.getParent() != clip.owner.get()) {
++                clip.restore(child); it.remove();
++            }
++        }
 +    }
 +    void restore() {
 +        for (Map.Entry<ViewGroup, State> e : states.entrySet()) e.getValue().restore(e.getKey());
 +        states.clear();
++        for (Map.Entry<View, IndicatorClip> e : indicators.entrySet()) e.getValue().restore(e.getKey());
++        indicators.clear();
++    }
++    private static final class IndicatorClip {
++        final WeakReference<ViewGroup> owner;
++        final Matrix matrix = new Matrix(), inverse = new Matrix();
++        final RectF allowed = new RectF(), work = new RectF();
++        final Rect next = new Rect();
++        Rect nativeBounds, appliedBounds, observedBounds;
++        boolean applied, constrained;
++        long used;
++        IndicatorClip(ViewGroup owner, View child) { this.owner = new WeakReference<>(owner); nativeBounds = child.getClipBounds(); }
++        void capture(View child) {
++            Rect current = child.getClipBounds();
++            observedBounds = current;
++            if (!applied || !Objects.equals(current, appliedBounds)) nativeBounds = current;
++        }
++        boolean restrict(View view, float left, float top, float right, float bottom) {
++            matrix.reset(); view.transformMatrixToGlobal(matrix);
++            if (!matrix.rectStaysRect()) return false;
++            work.set(left, top, right, bottom); matrix.mapRect(work);
++            if (!constrained) { allowed.set(work); constrained = true; }
++            else if (!allowed.intersect(work)) allowed.setEmpty();
++            return true;
++        }
++        boolean nativeClip(View child, Map<ViewGroup, State> states) {
++            if (child.getWidth() <= 0 || child.getHeight() <= 0) return false;
++            matrix.reset(); child.transformMatrixToGlobal(matrix);
++            if (!matrix.rectStaysRect() || !matrix.invert(inverse)) return false;
++            allowed.setEmpty(); constrained = false;
++            for (View view = child; view.getParent() instanceof ViewGroup;) {
++                ViewGroup parent = (ViewGroup) view.getParent(); State saved = states.get(parent);
++                boolean children = saved == null ? parent.getClipChildren() : saved.children;
++                boolean padding = saved == null ? parent.getClipToPadding() : saved.padding;
++                Rect bounds = saved == null ? parent.getClipBounds() : saved.bounds;
++                if (children) {
++                    if (!restrict(view, 0, 0, view.getWidth(), view.getHeight())) return false;
++                }
++                if (padding && (parent.getPaddingLeft() != 0 || parent.getPaddingTop() != 0
++                        || parent.getPaddingRight() != 0 || parent.getPaddingBottom() != 0)) {
++                    if (!restrict(parent, parent.getPaddingLeft(), parent.getPaddingTop(),
++                            parent.getWidth() - parent.getPaddingRight(), parent.getHeight() - parent.getPaddingBottom())) return false;
++                }
++                if (bounds != null) {
++                    if (!restrict(parent, bounds.left, bounds.top, bounds.right, bounds.bottom)) return false;
++                }
++                view = parent;
++            }
++            if (!constrained) return false;
++            if (allowed.isEmpty()) next.setEmpty();
++            else {
++                work.set(allowed); inverse.mapRect(work);
++                int left = (int) Math.ceil(work.left), top = (int) Math.ceil(work.top);
++                int right = (int) Math.floor(work.right), bottom = (int) Math.floor(work.bottom);
++                next.set(left, top, Math.max(left, right), Math.max(top, bottom));
++            }
++            if (nativeBounds != null && !next.intersect(nativeBounds)) next.setEmpty();
++            return true;
++        }
++        void apply(View child) {
++            if (!next.equals(observedBounds)) child.setClipBounds(next);
++            if (appliedBounds == null) appliedBounds = new Rect();
++            appliedBounds.set(next); applied = true;
++        }
++        void restore(View child) {
++            if (applied && Objects.equals(child.getClipBounds(), appliedBounds)) child.setClipBounds(nativeBounds);
++        }
 +    }
 +    private static final class State {
 +        final boolean children, padding, outline;
@@ -1445,10 +1553,10 @@ index 00000000..95480aa4
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
 new file mode 100644
-index 00000000..c08e2111
+index 00000000..a13a89fc
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
-@@ -0,0 +1,383 @@
+@@ -0,0 +1,420 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1478,6 +1586,7 @@ index 00000000..c08e2111
 +    private final IdentityHashMap<View, Integer> masks = new IdentityHashMap<>();
 +    private static final int COMMENT = 2, MEDIA = 1 << 20;
 +    private final WeakHashMap<ViewGroup, Rail> rails = new WeakHashMap<>();
++    private final WeakHashMap<ViewGroup, WeakReference<View>> nativeActionOwners = new WeakHashMap<>();
 +    private final ArrayList<Candidate> candidates = new ArrayList<>();
 +    private final Function<View, String> names;
 +    private final RectF work = new RectF(), viewerBounds = new RectF();
@@ -1496,11 +1605,11 @@ index 00000000..c08e2111
 +    FoldReelsControls(Function<View, String> names, Runnable changed) {
 +        this.names = names; visibility = new FoldReelsVisibility(changed);
 +    }
-+    String status() { return "rails=" + rails.size() + " moved=" + moved + " mode=" + mode + " hidden=" + visibility.size() + " touch=" + (down != null); }
++    String status() { return "rails=" + rails.size() + " moved=" + moved + " mode=" + mode + " hidden=" + visibility.size() + " touch=" + (down != null) + " nativeUfi=" + nativeActionOwners.size(); }
 +    int railCount() { return rails.size(); }
 +
 +    void discover(FoldReelsRenderer renderer, View viewer) {
-+        generation++; candidates.clear(); masks.clear();
++        generation++; candidates.clear(); masks.clear(); nativeActionOwners.clear();
 +        IdentityHashMap<View, Boolean> scopes = new IdentityHashMap<>();
 +        renderer.visitPresentation((page, scope) -> {
 +            // Only inspect renderer-anchored page scopes. A shared viewer walk can
@@ -1508,7 +1617,7 @@ index 00000000..c08e2111
 +            if (page == null || scope == null || !FoldReelsViews.descendant(page, viewer)
 +                    || !FoldReelsViews.descendant(scope, viewer) || scopes.put(scope, Boolean.TRUE) != null) return;
 +            nodes = 0;
-+            inspect(scope, viewer, 0);
++            inspect(scope, viewer, page, 0);
 +        }, viewer);
 +        for (Candidate c : candidates) {
 +            boolean keep = true;
@@ -1531,7 +1640,7 @@ index 00000000..c08e2111
 +            if (e.getValue().seen != generation) { if (active.get() == e.getKey()) cancel(); e.getValue().restore(e.getKey()); it.remove(); }
 +        }
 +    }
-+    private int inspect(View view, View viewer, int depth) {
++    private int inspect(View view, View viewer, View page, int depth) {
 +        if (++nodes > 1600 || depth > 40) return MEDIA; // Incomplete groups cannot qualify.
 +        if (view instanceof TextureView || view instanceof SurfaceView) return MEDIA;
 +        String name = names.apply(view);
@@ -1543,8 +1652,12 @@ index 00000000..c08e2111
 +        if (view instanceof ViewGroup) {
 +            ViewGroup group = (ViewGroup) view;
 +            int descendants = 0;
-+            for (int i = 0; i < group.getChildCount(); i++) descendants |= inspect(group.getChildAt(i), viewer, depth + 1);
++            for (int i = 0; i < group.getChildCount(); i++) descendants |= inspect(group.getChildAt(i), viewer, page, depth + 1);
 +            if (descendants != 0) mask = descendants; // Child semantics beat a misleading wrapper name.
++            if ((mask & MEDIA) == 0 && "clips_ufi_component".equals(name)
++                    && FoldReelsViews.classIs(view, "com.facebook.litho.ComponentHost")
++                    && FoldReelsViews.descendant(view, page))
++                nativeActionOwners.put(group, new WeakReference<>(page));
 +            float density = view.getResources().getDisplayMetrics().density;
 +            if ((mask & MEDIA) == 0 && (mask & COMMENT) != 0 && Integer.bitCount(mask) >= 3
 +                    && view.getWidth() > 0 && view.getWidth() <= 160 * density
@@ -1552,6 +1665,27 @@ index 00000000..c08e2111
 +                    && view.getHeight() > view.getWidth() * 1.35f) addCandidate(group, mask);
 +        }
 +        masks.put(view, mask);
++        return mask;
++    }
++    private int nativeActionRole(String name) {
++        switch (name) {
++            case "comment_button": case "comment_count": return COMMENT;
++            case "like_button": case "like_count": return 1;
++            case "direct_share_button": case "repost_count": return 4;
++            case "save_button": case "save_count": return 8;
++            case "clips_ufi_more_button_component": return 16;
++            default: return 0;
++        }
++    }
++    private int hideMountedActions(View view, int depth) {
++        if (++nodes > 1600 || depth > 40 || view instanceof TextureView || view instanceof SurfaceView) return MEDIA;
++        int role = nativeActionRole(names.apply(view)), mask = role;
++        if (view instanceof ViewGroup) {
++            ViewGroup group = (ViewGroup) view;
++            for (int i = 0; i < group.getChildCount(); i++) mask |= hideMountedActions(group.getChildAt(i), depth + 1);
++        }
++        if (role != 0 && (mask & MEDIA) == 0
++                && (mode == Actions.NONE || (mask & COMMENT) == 0)) visibility.hide(view);
 +        return mask;
 +    }
 +    private void addCandidate(ViewGroup group, int mask) {
@@ -1619,6 +1753,17 @@ index 00000000..c08e2111
 +
 +        moved = 0; FoldReelsViews.bounds(viewer, viewerBounds, matrix);
 +        if (interactive != null) viewerBounds.set(interactive);
++        // Litho can mount only the first cells of a neighbouring UFI column.
++        // Those named actions already have a native owner; they need not wait
++        // for a complete movable rail (comment plus three distinct roles).
++        for (Iterator<Map.Entry<ViewGroup, WeakReference<View>>> it = nativeActionOwners.entrySet().iterator(); it.hasNext();) {
++            Map.Entry<ViewGroup, WeakReference<View>> entry = it.next(); ViewGroup owner = entry.getKey(); View page = entry.getValue().get();
++            if (!"clips_ufi_component".equals(names.apply(owner))
++                    || !FoldReelsViews.classIs(owner, "com.facebook.litho.ComponentHost")
++                    || !owner.isAttachedToWindow() || page == null || !FoldReelsViews.descendant(page, viewer)
++                    || !FoldReelsViews.descendant(owner, page)) { it.remove(); continue; }
++            if (mode != Actions.ALL) { nodes = 0; hideMountedActions(owner, 0); }
++        }
 +        float inset = (inner ? 14 : 7) * viewer.getResources().getDisplayMetrics().density;
 +        // Stay inside the viewer's touch bounds; never put a control into the system gesture strip itself.
 +        float wantedRight = Math.min(viewport.right, viewerBounds.right) - inset;
@@ -1812,7 +1957,7 @@ index 00000000..c08e2111
 +        if (down != null) down.recycle(); if (last != null) last.recycle();
 +        down = last = null; swiping = false; pagerX = pagerY = 0; active.clear(); activeViewer.clear();
 +    }
-+    void restore() { cancel(); visibility.restore(); candidates.clear(); masks.clear(); metadataTargets.clear(); progressTargets.clear(); for (Map.Entry<ViewGroup, Rail> e : rails.entrySet()) e.getValue().restore(e.getKey()); rails.clear(); moved = 0; }
++    void restore() { cancel(); visibility.restore(); candidates.clear(); masks.clear(); nativeActionOwners.clear(); metadataTargets.clear(); progressTargets.clear(); for (Map.Entry<ViewGroup, Rail> e : rails.entrySet()) e.getValue().restore(e.getKey()); rails.clear(); moved = 0; }
 +    private static final class Candidate { final ViewGroup view; final int mask; Candidate(ViewGroup v, int m) { view = v; mask = m; } }
 +    private static final class Rail {
 +        final ArrayList<WeakReference<View>> targets = new ArrayList<>();
@@ -5289,6 +5434,103 @@ index 00000000..465db599
 +        assertTrue(p.hideHeader(false));assertFalse(p.hideHeader(true));p.preset(false);assertFalse(p.hideHeader(false));
 +    }
 +}
+diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedControlsTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedControlsTest.java
+new file mode 100644
+index 00000000..968b4b27
+--- /dev/null
++++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedControlsTest.java
+@@ -0,0 +1,91 @@
++package app.morphe.extension.instagram.patches.reels;
++
++import android.view.View;
++import android.widget.FrameLayout;
++import com.facebook.litho.ComponentHost;
++import java.util.concurrent.atomic.AtomicInteger;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.RobolectricTestRunner;
++import org.robolectric.annotation.Config;
++import static org.junit.Assert.*;
++
++@RunWith(RobolectricTestRunner.class)
++@Config(sdk=29, manifest=Config.NONE, qualifiers="w1000dp-h1600dp-mdpi")
++public class FoldReelsMountedControlsTest extends FoldReelsTestFixture {
++    ComponentHost owner(int page) {
++        ComponentHost owner = new ComponentHost(activity); owner.setTag("clips_ufi_component");
++        add(pages.get(page), owner, 800, 300, 80, 440); return owner;
++    }
++    View action(FrameLayout parent, String role, int top) {
++        View view = new View(activity); view.setTag(role); view.setClickable(true);
++        add(parent, view, 0, top, 80, 60); return view;
++    }
++    @Test public void neighbourLikeAndCountHideBeforeACompleteRailIsMounted() {
++        ComponentHost owner = owner(2);
++        FrameLayout column = new FrameLayout(activity); add(owner, column, 0, 0, 80, 440);
++        View like = action(column, "like_button", 0), count = action(column, "like_count", 60);
++        View unknown = action(column, "", 120);
++        discoverControls(); assertEquals(0, controls.railCount());
++        for (float distance : new float[]{0, 350, 700, 350, 0}) {
++            swipe(distance); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++            assertEquals(View.INVISIBLE, like.getVisibility()); assertEquals(View.INVISIBLE, count.getVisibility());
++            assertEquals(View.VISIBLE, unknown.getVisibility()); assertEquals(View.VISIBLE, owner.getVisibility());
++        }
++        controlMode(FoldReelsControls.Actions.ALL);
++        assertEquals(View.VISIBLE, like.getVisibility()); assertEquals(View.VISIBLE, count.getVisibility());
++        assertEquals(0, owner.getTranslationX(), .001f);
++    }
++    @Test public void laterMountedActionsUseTheKnownOwnerWithoutWaitingForRediscovery() {
++        ComponentHost owner = owner(1); action(owner, "like_button", 0);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        View comment = action(owner, "comment_button", 100), count = action(owner, "comment_count", 160);
++        View share = action(owner, "direct_share_button", 200), save = action(owner, "save_button", 300);
++        AtomicInteger clicks = new AtomicInteger(); comment.setOnClickListener(v -> clicks.incrementAndGet());
++        controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(0, controls.railCount());
++        assertTrue(comment.isShown()); assertTrue(count.isShown());
++        assertEquals(View.INVISIBLE, share.getVisibility()); assertEquals(View.INVISIBLE, save.getVisibility());
++        float[] point = localCentre(comment); send(android.view.MotionEvent.ACTION_DOWN, point[0], point[1]);
++        send(android.view.MotionEvent.ACTION_UP, point[0], point[1]); assertEquals(1, clicks.get());
++        controlMode(FoldReelsControls.Actions.NONE);
++        assertEquals(View.INVISIBLE, comment.getVisibility()); assertEquals(View.INVISIBLE, count.getVisibility());
++        controlMode(FoldReelsControls.Actions.ALL);
++        for (int i=0; i<owner.getChildCount(); i++) assertEquals(View.VISIBLE, owner.getChildAt(i).getVisibility());
++    }
++    @Test public void detachedActionAndReboundOwnerCannotCarryAHideLeaseToAnotherPage() {
++        ComponentHost owner = owner(1); View like = action(owner, "like_button", 0);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(View.INVISIBLE, like.getVisibility());
++        owner.removeView(like); assertEquals(View.VISIBLE, like.getVisibility());
++        add(pages.get(2), like, 800, 300, 80, 60);
++        controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(View.VISIBLE, like.getVisibility());
++        pages.get(1).removeView(owner); action(owner, "save_button", 300); add(pages.get(2), owner, 800, 300, 80, 440);
++        controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(View.VISIBLE, owner.getChildAt(0).getVisibility());
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(View.INVISIBLE, owner.getChildAt(0).getVisibility()); assertEquals(View.VISIBLE, like.getVisibility());
++        View save = owner.getChildAt(0);
++        owner.setTag("clips_metadata_component");
++        controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(View.VISIBLE, save.getVisibility());
++        owner.setTag("clips_ufi_component");
++        controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(View.VISIBLE, save.getVisibility());
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(View.INVISIBLE, save.getVisibility());
++    }
++    @Test public void classNameAndResourceNameAloneDoNotQualifyUnknownOwners() {
++        FrameLayout namedOnly = new FrameLayout(activity); namedOnly.setTag("clips_ufi_component");
++        add(pages.get(1), namedOnly, 800, 300, 80, 440); View unowned = action(namedOnly, "like_button", 0);
++        ComponentHost unnamed = new ComponentHost(activity); add(pages.get(1), unnamed, 700, 300, 80, 440);
++        View anonymousOwnerAction = action(unnamed, "like_button", 0);
++        ComponentHost outside = new ComponentHost(activity); outside.setTag("clips_ufi_component"); add(content, outside, 600, 300, 80, 440);
++        View outsidePage = action(outside, "like_button", 0);
++        discoverControls(); controlMode(FoldReelsControls.Actions.NONE);
++        assertEquals(0, controls.railCount());
++        for (View view : new View[]{unowned, anonymousOwnerAction, outsidePage}) assertEquals(View.VISIBLE, view.getVisibility());
++    }
++    @Test public void mixedNamedWrapperCannotHideItsNativeCommentDescendant() {
++        ComponentHost owner = owner(1);
++        FrameLayout mixed = new FrameLayout(activity); mixed.setTag("like_count"); add(owner, mixed, 0, 0, 80, 120);
++        View comment = action(mixed, "comment_button", 0), unknown = action(mixed, "", 60);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertTrue(comment.isShown()); assertTrue(unknown.isShown()); assertEquals(View.VISIBLE, mixed.getVisibility());
++    }
++}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedEvidenceTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedEvidenceTest.java
 new file mode 100644
 index 00000000..f79c0415
@@ -6347,6 +6589,182 @@ index 00000000..534cb828
 +        assertEquals(original,bounds(caption));metadata.restore(controls);
 +    }
 +}
+diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRefreshClippingTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRefreshClippingTest.java
+new file mode 100644
+index 00000000..de1bcb13
+--- /dev/null
++++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRefreshClippingTest.java
+@@ -0,0 +1,170 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.morphe.extension.instagram.patches.reels;
++
++import android.app.Activity;
++import android.content.Context;
++import android.graphics.Bitmap;
++import android.graphics.Canvas;
++import android.graphics.Color;
++import android.graphics.Rect;
++import android.graphics.drawable.ColorDrawable;
++import android.graphics.drawable.ShapeDrawable;
++import android.graphics.drawable.shapes.OvalShape;
++import android.view.View;
++import android.widget.FrameLayout;
++import android.widget.ImageView;
++import org.junit.After;
++import org.junit.Before;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.Robolectric;
++import org.robolectric.RobolectricTestRunner;
++import org.robolectric.annotation.Config;
++import org.robolectric.annotation.GraphicsMode;
++import static org.junit.Assert.*;
++
++/** Native Canvas reproductions of clipping, not a Samsung refresh implementation. */
++@RunWith(RobolectricTestRunner.class)
++@Config(sdk=29, manifest=Config.NONE, qualifiers="w400dp-h600dp-mdpi")
++@GraphicsMode(GraphicsMode.Mode.NATIVE)
++public class FoldReelsRefreshClippingTest {
++    org.robolectric.android.controller.ActivityController<Activity> controller;
++    Activity activity;
++    FrameLayout root, page;
++    NativeOwner owner;
++    NativeIndicator indicator;
++    View media;
++    final FoldReelsClipping clipping = new FoldReelsClipping(view -> view instanceof NativeOwner,
++            view -> view instanceof NativeIndicator);
++    static final int LIGHT = Color.rgb(250, 250, 250);
++    static final class NativeOwner extends FrameLayout { NativeOwner(Context context) { super(context); } }
++    static final class NativeIndicator extends ImageView {
++        NativeIndicator(Context context) {
++            super(context);
++            ShapeDrawable background = new ShapeDrawable(new OvalShape()); background.getPaint().setColor(LIGHT);
++            setBackground(background); setImageDrawable(new ColorDrawable(Color.TRANSPARENT));
++        }
++    }
++    static void add(FrameLayout parent, View child, int x, int y, int width, int height) {
++        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
++        params.leftMargin = x; params.topMargin = y; parent.addView(child, params);
++        child.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
++                View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
++        child.layout(x, y, x + width, y + height);
++    }
++    @Before public void prepare() {
++        controller = Robolectric.buildActivity(Activity.class).setup().visible(); activity = controller.get();
++        root = new FrameLayout(activity); root.setBackgroundColor(Color.BLACK); activity.setContentView(root);
++        root.measure(View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
++                View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY)); root.layout(0, 0, 400, 600);
++        owner = new NativeOwner(activity); add(root, owner, 0, 80, 400, 440);
++        page = new FrameLayout(activity); add(owner, page, 0, 0, 400, 440);
++        media = new View(activity); media.setBackgroundColor(Color.BLUE); add(page, media, 0, -80, 400, 600);
++        indicator = new NativeIndicator(activity); add(owner, indicator, 168, -64, 64, 64);
++    }
++    @After public void cleanup() { clipping.restore(); controller.pause().stop().destroy(); }
++    void frame(FoldReelsClipping leases) {
++        leases.beginFrame(); leases.openBoundary(root); leases.openPath(media, root); leases.endFrame();
++    }
++    Bitmap draw() { Bitmap bitmap = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888); root.draw(new Canvas(bitmap)); return bitmap; }
++    void move(int y) { indicator.layout(168, y, 232, y + 64); }
++
++    @Test public void nativeAndOpenedAndPreservedDrawingAreComparedAtTheSameGeometry() {
++        assertEquals(Color.BLACK, draw().getPixel(200, 48));
++        FoldReelsClipping old = new FoldReelsClipping(view -> false, view -> false);
++        try {
++            frame(old);
++            assertEquals(LIGHT, draw().getPixel(200, 48));
++            assertEquals(Color.BLUE, draw().getPixel(200, 5));
++        } finally { old.restore(); }
++        frame(clipping);
++        assertEquals(new Rect(), indicator.getClipBounds());
++        assertEquals(Color.BLUE, draw().getPixel(200, 48));
++        assertEquals(Color.BLUE, draw().getPixel(200, 5));
++        assertFalse(root.getClipChildren()); assertFalse(owner.getClipChildren());
++        assertEquals(View.VISIBLE, indicator.getVisibility()); assertEquals(1f, indicator.getAlpha(), 0);
++        assertEquals(0f, indicator.getTranslationY(), 0);
++    }
++
++    @Test public void movingIndicatorRetainsTheNativeVisiblePortionWithoutRediscovery() {
++        move(-32); Bitmap nativeDrawing = draw();
++        frame(clipping);
++        assertEquals(new Rect(0, 32, 64, 64), indicator.getClipBounds());
++        assertEquals(nativeDrawing.getPixel(200, 90), draw().getPixel(200, 90));
++        assertEquals(LIGHT, draw().getPixel(200, 90));
++        assertEquals(Color.BLUE, draw().getPixel(200, 60));
++        move(16); frame(clipping);
++        assertEquals(new Rect(0, 0, 64, 64), indicator.getClipBounds());
++        assertEquals(LIGHT, draw().getPixel(200, 128));
++        move(-64); frame(clipping); assertEquals(new Rect(), indicator.getClipBounds());
++    }
++
++    @Test public void animationTransformAndResizeUseCurrentMatricesRatherThanAnInsetConstant() {
++        move(-16); indicator.setPivotY(0); indicator.setScaleY(2f); frame(clipping);
++        assertEquals(new Rect(0, 8, 64, 64), indicator.getClipBounds());
++        assertEquals(2f, indicator.getScaleY(), 0); assertEquals(-16, indicator.getTop());
++        indicator.setScaleY(1f); owner.layout(0, 37, 400, 477); move(-40);
++        indicator.measure(View.MeasureSpec.makeMeasureSpec(40, View.MeasureSpec.EXACTLY),
++                View.MeasureSpec.makeMeasureSpec(40, View.MeasureSpec.EXACTLY));
++        indicator.layout(180, -40, 220, 0); frame(clipping);
++        assertEquals(new Rect(), indicator.getClipBounds());
++        indicator.layout(180, -10, 220, 30); frame(clipping);
++        assertEquals(new Rect(0, 10, 40, 40), indicator.getClipBounds());
++    }
++
++    @Test public void originalChildAndOwnerClipsRemainPartOfTheNativeMaskAndAreRestored() {
++        Rect childClip = new Rect(4, 2, 60, 58), ownerClip = new Rect(0, 20, 400, 440);
++        indicator.setClipBounds(childClip); owner.setClipBounds(ownerClip); move(0);
++        frame(clipping); assertEquals(new Rect(4, 20, 60, 58), indicator.getClipBounds());
++        assertNull(owner.getClipBounds());
++        clipping.restore(); assertEquals(childClip, indicator.getClipBounds()); assertEquals(ownerClip, owner.getClipBounds());
++        assertTrue(root.getClipChildren()); assertTrue(owner.getClipChildren());
++    }
++
++    @Test public void nativeChildClipMutationIsCapturedAndNewerMutationWinsRestoration() {
++        frame(clipping); Rect nativeChange = new Rect(8, 10, 56, 50);
++        move(16); indicator.setClipBounds(nativeChange); frame(clipping);
++        assertEquals(nativeChange, indicator.getClipBounds());
++        clipping.restore(); assertEquals(nativeChange, indicator.getClipBounds());
++        frame(clipping); Rect later = new Rect(3, 4, 45, 46); indicator.setClipBounds(later);
++        clipping.restore(); assertEquals(later, indicator.getClipBounds());
++    }
++
++    @Test public void reparentAndRebindRestoreThePreviousIndicatorAndProtectTheReplacement() {
++        frame(clipping); NativeIndicator previous = indicator;
++        owner.removeView(previous); add(root, previous, 0, 0, 64, 64);
++        indicator = new NativeIndicator(activity); add(owner, indicator, 168, -64, 64, 64);
++        frame(clipping); assertNull(previous.getClipBounds()); assertEquals(new Rect(), indicator.getClipBounds());
++        owner.removeView(indicator); frame(clipping); assertNull(indicator.getClipBounds());
++        clipping.beginFrame(); clipping.endFrame(); assertTrue(owner.getClipChildren());
++    }
++
++    @Test public void unknownSiblingsAndUnrelatedOwnersAndAmbiguousIndicatorsAreNotChanged() {
++        ImageView unknown = new ImageView(activity); unknown.setBackgroundColor(LIGHT);
++        Rect original = new Rect(2, 3, 30, 31); unknown.setClipBounds(original); add(owner, unknown, 40, -64, 64, 64);
++        FrameLayout unrelated = new FrameLayout(activity); add(root, unrelated, 0, 0, 400, 600);
++        NativeIndicator other = new NativeIndicator(activity); add(unrelated, other, 100, 0, 64, 64);
++        frame(clipping); assertEquals(original, unknown.getClipBounds()); assertNull(other.getClipBounds());
++        NativeIndicator duplicate = new NativeIndicator(activity); add(owner, duplicate, 240, -64, 64, 64);
++        frame(clipping); assertNull(indicator.getClipBounds()); assertNull(duplicate.getClipBounds());
++        assertEquals(original, unknown.getClipBounds());
++    }
++
++    @Test public void defaultIdentityDoesNotClassifyAPlainImageViewByItsSizeOrColor() {
++        FoldReelsClipping strict = new FoldReelsClipping();
++        try { frame(strict); assertNull(indicator.getClipBounds()); }
++        finally { strict.restore(); }
++    }
++
++    @Test public void originallyUnclippedOwnerDoesNotAcquireAnInventedOwnerBoundary() {
++        root.setClipChildren(false); root.setClipToPadding(false);
++        owner.setClipChildren(false); owner.setClipToPadding(false);
++        assertEquals(LIGHT, draw().getPixel(200, 48));
++        frame(clipping);
++        Rect clip = indicator.getClipBounds();
++        assertTrue(clip == null || clip.contains(0, 0, 64, 64));
++        assertEquals(LIGHT, draw().getPixel(200, 48));
++        clipping.restore(); assertFalse(root.getClipChildren()); assertFalse(owner.getClipChildren());
++        assertNull(indicator.getClipBounds());
++    }
++}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsRuntimeTest.java
 new file mode 100644
 index 00000000..5ec1352f
@@ -7315,6 +7733,21 @@ index 00000000..f1dd40eb
 +        try { FoldReelsDiagnostics.ancestors(viewer,content,out);FoldReelsDiagnostics.tree(viewer,out,0,new int[]{0}); } finally { armed[0]=false; }
 +        assertTrue(out.toString().contains("global="));assertTrue(out.toString().contains("fg={"));assertTrue(out.toString().contains("sibling-root" ) || out.toString().contains("ancestor"));
 +    }
++}
+diff --git a/extensions/instagram/src/test/java/com/facebook/litho/ComponentHost.java b/extensions/instagram/src/test/java/com/facebook/litho/ComponentHost.java
+new file mode 100644
+index 00000000..8f670833
+--- /dev/null
++++ b/extensions/instagram/src/test/java/com/facebook/litho/ComponentHost.java
+@@ -0,0 +1,9 @@
++package com.facebook.litho;
++
++import android.content.Context;
++import android.widget.FrameLayout;
++
++/** Native class boundary for view ownership tests; no Litho mount behavior is simulated. */
++public class ComponentHost extends FrameLayout {
++    public ComponentHost(Context context) { super(context); }
 +}
 diff --git a/extensions/instagram/src/test/java/com/instagram/common/ui/widget/imageview/IgImageView.java b/extensions/instagram/src/test/java/com/instagram/common/ui/widget/imageview/IgImageView.java
 new file mode 100644
