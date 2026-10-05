@@ -1553,10 +1553,10 @@ index 00000000..95480aa4
 +}
 diff --git a/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
 new file mode 100644
-index 00000000..a13a89fc
+index 00000000..446cefca
 --- /dev/null
 +++ b/extensions/instagram/src/main/java/app/morphe/extension/instagram/patches/reels/FoldReelsControls.java
-@@ -0,0 +1,420 @@
+@@ -0,0 +1,553 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -1586,7 +1586,8 @@ index 00000000..a13a89fc
 +    private final IdentityHashMap<View, Integer> masks = new IdentityHashMap<>();
 +    private static final int COMMENT = 2, MEDIA = 1 << 20;
 +    private final WeakHashMap<ViewGroup, Rail> rails = new WeakHashMap<>();
-+    private final WeakHashMap<ViewGroup, WeakReference<View>> nativeActionOwners = new WeakHashMap<>();
++    private final WeakHashMap<ViewGroup, NativeOwner> nativeActionOwners = new WeakHashMap<>();
++    private WeakReference<FoldReelsRenderer> presentationRenderer = new WeakReference<>(null);
 +    private final ArrayList<Candidate> candidates = new ArrayList<>();
 +    private final Function<View, String> names;
 +    private final RectF work = new RectF(), viewerBounds = new RectF();
@@ -1609,7 +1610,8 @@ index 00000000..a13a89fc
 +    int railCount() { return rails.size(); }
 +
 +    void discover(FoldReelsRenderer renderer, View viewer) {
-+        generation++; candidates.clear(); masks.clear(); nativeActionOwners.clear();
++        generation++; candidates.clear(); masks.clear();
++        presentationRenderer = new WeakReference<>(renderer);
 +        IdentityHashMap<View, Boolean> scopes = new IdentityHashMap<>();
 +        renderer.visitPresentation((page, scope) -> {
 +            // Only inspect renderer-anchored page scopes. A shared viewer walk can
@@ -1617,7 +1619,7 @@ index 00000000..a13a89fc
 +            if (page == null || scope == null || !FoldReelsViews.descendant(page, viewer)
 +                    || !FoldReelsViews.descendant(scope, viewer) || scopes.put(scope, Boolean.TRUE) != null) return;
 +            nodes = 0;
-+            inspect(scope, viewer, page, 0);
++            inspect(scope, viewer, page, scope, 0);
 +        }, viewer);
 +        for (Candidate c : candidates) {
 +            boolean keep = true;
@@ -1632,15 +1634,21 @@ index 00000000..a13a89fc
 +            if (rail == null) { rail = new Rail(c.view); rails.put(c.view, rail); }
 +            rail.mask = c.mask; rail.hidden.clear(); rail.commentTargets.clear(); commentBranches(c.view, c.view, rail);
 +            rail.seen = generation; rail.page = new WeakReference<>(FoldReelsViews.page(c.view, viewer));
++            ViewGroup nativeOwner = nativeOwnerOf(c.view, viewer);
++            rail.nativeOwner = nativeOwner == null ? null : new WeakReference<>(nativeOwner);
 +            rail.targets.clear(); clickable(c.view, rail.targets, 0);
 +        }
 +        candidates.clear(); masks.clear();
++        for (Iterator<Map.Entry<ViewGroup, NativeOwner>> it = nativeActionOwners.entrySet().iterator(); it.hasNext();) {
++            Map.Entry<ViewGroup, NativeOwner> entry = it.next();
++            if (entry.getValue().seen != generation) { releaseOwner(entry.getKey(), entry.getValue()); it.remove(); }
++        }
 +        for (Iterator<Map.Entry<ViewGroup, Rail>> it = rails.entrySet().iterator(); it.hasNext();) {
 +            Map.Entry<ViewGroup, Rail> e = it.next();
 +            if (e.getValue().seen != generation) { if (active.get() == e.getKey()) cancel(); e.getValue().restore(e.getKey()); it.remove(); }
 +        }
 +    }
-+    private int inspect(View view, View viewer, View page, int depth) {
++    private int inspect(View view, View viewer, View page, View scope, int depth) {
 +        if (++nodes > 1600 || depth > 40) return MEDIA; // Incomplete groups cannot qualify.
 +        if (view instanceof TextureView || view instanceof SurfaceView) return MEDIA;
 +        String name = names.apply(view);
@@ -1652,12 +1660,18 @@ index 00000000..a13a89fc
 +        if (view instanceof ViewGroup) {
 +            ViewGroup group = (ViewGroup) view;
 +            int descendants = 0;
-+            for (int i = 0; i < group.getChildCount(); i++) descendants |= inspect(group.getChildAt(i), viewer, page, depth + 1);
++            for (int i = 0; i < group.getChildCount(); i++) descendants |= inspect(group.getChildAt(i), viewer, page, scope, depth + 1);
 +            if (descendants != 0) mask = descendants; // Child semantics beat a misleading wrapper name.
 +            if ((mask & MEDIA) == 0 && "clips_ufi_component".equals(name)
 +                    && FoldReelsViews.classIs(view, "com.facebook.litho.ComponentHost")
-+                    && FoldReelsViews.descendant(view, page))
-+                nativeActionOwners.put(group, new WeakReference<>(page));
++                    && FoldReelsViews.descendant(view, scope)) {
++                NativeOwner state = nativeActionOwners.get(group);
++                if (state == null || state.page.get() != page || state.scope.get() != scope || state.parent.get() != group.getParent()) {
++                    if (state != null) releaseOwner(group, state);
++                    state = new NativeOwner(group, page, scope); nativeActionOwners.put(group, state);
++                }
++                state.seen = generation;
++            }
 +            float density = view.getResources().getDisplayMetrics().density;
 +            if ((mask & MEDIA) == 0 && (mask & COMMENT) != 0 && Integer.bitCount(mask) >= 3
 +                    && view.getWidth() > 0 && view.getWidth() <= 160 * density
@@ -1677,16 +1691,95 @@ index 00000000..a13a89fc
 +            default: return 0;
 +        }
 +    }
-+    private int hideMountedActions(View view, int depth) {
-+        if (++nodes > 1600 || depth > 40 || view instanceof TextureView || view instanceof SurfaceView) return MEDIA;
-+        int role = nativeActionRole(names.apply(view)), mask = role;
++    private ViewGroup nativeOwnerOf(View view, View viewer) {
++        for (View v = view; v != viewer && v != null; v = v.getParent() instanceof View ? (View) v.getParent() : null)
++            if (v instanceof ViewGroup && "clips_ufi_component".equals(names.apply(v))
++                    && FoldReelsViews.classIs(v, "com.facebook.litho.ComponentHost")) return (ViewGroup) v;
++        return null;
++    }
++    private boolean currentOwner(ViewGroup owner, NativeOwner state, View viewer, FoldReelsRenderer renderer,
++                                 IdentityHashMap<View, Boolean> livePages) {
++        View page = state.page.get(), scope = state.scope.get();
++        if (renderer == null || !"clips_ufi_component".equals(names.apply(owner))
++                || !FoldReelsViews.classIs(owner, "com.facebook.litho.ComponentHost")
++                || !owner.isAttachedToWindow() || page == null || scope == null
++                || owner.getParent() != state.parent.get()
++                || !FoldReelsViews.descendant(page, viewer) || !FoldReelsViews.descendant(scope, viewer)
++                || !FoldReelsViews.descendant(page, scope) || !FoldReelsViews.descendant(owner, scope)) return false;
++        int[] matches = {0}; boolean[] same = {false};
++        renderer.visitPresentation((currentPage, currentScope) -> {
++            if (livePages.containsKey(currentPage) && FoldReelsViews.descendant(currentPage, viewer) && FoldReelsViews.descendant(currentScope, viewer)
++                    && FoldReelsViews.descendant(owner, currentScope)) {
++                matches[0]++; same[0] |= currentPage == page && currentScope == scope;
++            }
++        }, viewer);
++        return matches[0] == 1 && same[0];
++    }
++    /** Complete read-only pass: a late media mount or budget abort must not hide a prefix. */
++    private int mountedMask(View view, int depth, IdentityHashMap<View, Boolean> players, ArrayList<View> comments) {
++        if (++nodes > 1600 || depth > 40 || view instanceof TextureView || view instanceof SurfaceView
++                || players.containsKey(view)) return MEDIA;
++        String name = names.apply(view);
++        int mask = nativeActionRole(name);
++        if ("comment_button".equals(name)) comments.add(view);
 +        if (view instanceof ViewGroup) {
 +            ViewGroup group = (ViewGroup) view;
-+            for (int i = 0; i < group.getChildCount(); i++) mask |= hideMountedActions(group.getChildAt(i), depth + 1);
++            int descendants = 0;
++            for (int i = 0; i < group.getChildCount(); i++) descendants |= mountedMask(group.getChildAt(i), depth + 1, players, comments);
++            if (descendants != 0) mask = descendants;
 +        }
-+        if (role != 0 && (mask & MEDIA) == 0
-+                && (mode == Actions.NONE || (mask & COMMENT) == 0)) visibility.hide(view);
++        masks.put(view, mask);
 +        return mask;
++    }
++    private boolean commentCell(View view, ViewGroup root, int mask) {
++        float density = view.getResources().getDisplayMetrics().density;
++        return view != root && mask == COMMENT && view.getHeight() <= 160 * density
++                && view.getHeight() <= root.getHeight() * .35f;
++    }
++    private void hideOwnedBranches(View view, ViewGroup root) {
++        int mask = masks.getOrDefault(view, MEDIA);
++        if ((mask & MEDIA) != 0) return;
++        // CLEAN applies to every non-comment branch inside this verified owner,
++        // including anonymous images/counts. Anonymous views outside it are untouched.
++        if (mode == Actions.COMMENT_ONLY && commentCell(view, root, mask)) return;
++        if (view != root && (mode == Actions.NONE || (mask & COMMENT) == 0)) visibility.hide(view);
++        if (view instanceof ViewGroup) {
++            ViewGroup group = (ViewGroup) view;
++            for (int i = 0; i < group.getChildCount(); i++) hideOwnedBranches(group.getChildAt(i), root);
++        }
++    }
++    private void releaseOwner(ViewGroup owner, NativeOwner state) {
++        if (active.get() == owner) cancel();
++        Rail anchor = state.anchor;
++        if (anchor.applied && Math.abs(owner.getTranslationY() - anchor.ay) < .001f) owner.setTranslationY(anchor.y);
++        anchor.applied = false;
++    }
++    private void anchorComment(ViewGroup owner, NativeOwner state, View comment, View viewer,
++                               RectF viewport, boolean enabled, FoldReelsClipping clipping) {
++        Rail anchor = state.anchor;
++        if (!enabled || mode != Actions.COMMENT_ONLY || comment == null
++                || !FoldReelsViews.unitParents(owner, viewer)) { releaseOwner(owner, state); return; }
++        if (!anchor.applied || Math.abs(owner.getTranslationY() - anchor.ay) > .001f) anchor.y = owner.getTranslationY();
++        anchor.x = anchor.ax = owner.getTranslationX(); FoldReelsViews.bounds(comment, work, matrix);
++        float nativeCentre = work.centerY() - (owner.getTranslationY() - anchor.y);
++        // A complete rail may still carry the previous frame's page translation.
++        // Remove it before deriving the native comment bounds; it is reset below.
++        for (Map.Entry<ViewGroup, Rail> entry : rails.entrySet()) {
++            Rail rail = entry.getValue();
++            if (rail.nativeOwner != null && rail.nativeOwner.get() == owner
++                    && FoldReelsViews.descendant(comment, entry.getKey())) {
++                rail.capture(entry.getKey());
++                if (entry.getKey() != owner) nativeCentre -= entry.getKey().getTranslationY() - rail.y;
++            }
++        }
++        View page = state.page.get();
++        float nativeOffset = FoldReelsViews.pageOffset(page, viewer, page.getHeight(), work, matrix);
++        float visualOffset = FoldReelsGeometry.pageOffset(nativeOffset, page.getHeight(), viewport.height());
++        if (!Float.isFinite(visualOffset) || !Float.isFinite(nativeCentre)) { releaseOwner(owner, state); return; }
++        anchor.ax = anchor.x; anchor.ay = anchor.y + viewerBounds.centerY() + visualOffset - nativeCentre;
++        if (Math.abs(owner.getTranslationY() - anchor.ay) > .01f) owner.setTranslationY(anchor.ay);
++        anchor.applied = true;
++        if (Math.abs(anchor.ay - anchor.y) > .5f) { clipping.openPath(owner, viewer); moved++; }
 +    }
 +    private void addCandidate(ViewGroup group, int mask) {
 +        for (Candidate candidate : candidates) if (candidate.view == group) return;
@@ -1706,9 +1799,7 @@ index 00000000..a13a89fc
 +        if ((mask & COMMENT) == 0) { rail.hidden.add(new WeakReference<>(view)); return; }
 +        // Preserve a compact, exclusively-comment cell including its anonymous count/label.
 +        // Larger wrappers continue recursively: unrelated anonymous siblings must disappear.
-+        float density = view.getResources().getDisplayMetrics().density;
-+        if (view != root && mask == COMMENT && view.getHeight() <= 160 * density
-+                && view.getHeight() <= root.getHeight() * .35f) { clickable(view, rail.commentTargets, 0); return; }
++        if (commentCell(view, root, mask)) { clickable(view, rail.commentTargets, 0); return; }
 +        if (view instanceof ViewGroup) {
 +            ViewGroup group = (ViewGroup) view;
 +            for (int i = 0; i < group.getChildCount(); i++) commentBranches(group.getChildAt(i), root, rail);
@@ -1753,35 +1844,65 @@ index 00000000..a13a89fc
 +
 +        moved = 0; FoldReelsViews.bounds(viewer, viewerBounds, matrix);
 +        if (interactive != null) viewerBounds.set(interactive);
-+        // Litho can mount only the first cells of a neighbouring UFI column.
-+        // Those named actions already have a native owner; they need not wait
-+        // for a complete movable rail (comment plus three distinct roles).
-+        for (Iterator<Map.Entry<ViewGroup, WeakReference<View>>> it = nativeActionOwners.entrySet().iterator(); it.hasNext();) {
-+            Map.Entry<ViewGroup, WeakReference<View>> entry = it.next(); ViewGroup owner = entry.getKey(); View page = entry.getValue().get();
-+            if (!"clips_ufi_component".equals(names.apply(owner))
-+                    || !FoldReelsViews.classIs(owner, "com.facebook.litho.ComponentHost")
-+                    || !owner.isAttachedToWindow() || page == null || !FoldReelsViews.descendant(page, viewer)
-+                    || !FoldReelsViews.descendant(owner, page)) { it.remove(); continue; }
-+            if (mode != Actions.ALL) { nodes = 0; hideMountedActions(owner, 0); }
++        FoldReelsRenderer renderer = presentationRenderer.get();
++        IdentityHashMap<View, Boolean> players = new IdentityHashMap<>();
++        IdentityHashMap<View, Boolean> livePages = new IdentityHashMap<>();
++        if (renderer != null) renderer.visitPlayers((surface, page) -> {
++            players.put(surface, Boolean.TRUE);
++            if (surface.isAttachedToWindow() && FoldReelsViews.descendant(surface, viewer)
++                    && FoldReelsViews.page(surface, viewer) == page) livePages.put(page, Boolean.TRUE);
++        });
++        IdentityHashMap<ViewGroup, Boolean> preparedOwners = new IdentityHashMap<>();
++        // Litho may mount just part of a native UFI. Validate its entire current
++        // subtree and exclusive presentation ownership before leasing any view.
++        for (Iterator<Map.Entry<ViewGroup, NativeOwner>> it = nativeActionOwners.entrySet().iterator(); it.hasNext();) {
++            Map.Entry<ViewGroup, NativeOwner> entry = it.next(); ViewGroup owner = entry.getKey(); NativeOwner state = entry.getValue();
++            masks.clear(); nodes = 0; ArrayList<View> comments = new ArrayList<>();
++            if (!currentOwner(owner, state, viewer, renderer, livePages)
++                    || (mountedMask(owner, 0, players, comments) & MEDIA) != 0) {
++                releaseOwner(owner, state); it.remove(); continue;
++            }
++            preparedOwners.put(owner, Boolean.TRUE);
++            state.anchor.hidden.clear(); state.anchor.commentTargets.clear(); commentBranches(owner, owner, state.anchor);
++            for (Map.Entry<ViewGroup, Rail> railEntry : rails.entrySet()) {
++                Rail rail = railEntry.getValue();
++                if (rail.nativeOwner != null && rail.nativeOwner.get() == owner) {
++                    rail.hidden.clear(); rail.commentTargets.clear(); commentBranches(railEntry.getKey(), railEntry.getKey(), rail);
++                }
++            }
++            if (mode != Actions.ALL) hideOwnedBranches(owner, owner);
++            anchorComment(owner, state, comments.size() == 1 ? comments.get(0) : null, viewer, viewport, enabled, clipping);
 +        }
++        masks.clear();
 +        float inset = (inner ? 14 : 7) * viewer.getResources().getDisplayMetrics().density;
 +        // Stay inside the viewer's touch bounds; never put a control into the system gesture strip itself.
 +        float wantedRight = Math.min(viewport.right, viewerBounds.right) - inset;
 +        for (Iterator<Map.Entry<ViewGroup, Rail>> it = rails.entrySet().iterator(); it.hasNext();) {
 +            Map.Entry<ViewGroup, Rail> e = it.next(); ViewGroup view = e.getKey(); Rail rail = e.getValue();
-+            if (!view.isAttachedToWindow() || !FoldReelsViews.descendant(view, viewer)) {
++            ViewGroup nativeOwner = rail.nativeOwner == null ? null : rail.nativeOwner.get();
++            if (!view.isAttachedToWindow() || !FoldReelsViews.descendant(view, viewer)
++                    || rail.nativeOwner != null && (nativeOwner == null || !preparedOwners.containsKey(nativeOwner)
++                    || !FoldReelsViews.descendant(view, nativeOwner))) {
 +                if (active.get() == view) cancel(); rail.restore(view); it.remove(); continue;
 +            }
-+            if (mode == Actions.NONE) visibility.hide(view);
-+            else if (mode == Actions.COMMENT_ONLY) for (WeakReference<View> ref : rail.hidden) visibility.hide(ref.get());
++            // A verified UFI uses the fresh policy above. Its cached rail branches
++            // must not keep hiding an ancestor that has just mounted a comment.
++            if (rail.nativeOwner == null) {
++                if (mode == Actions.NONE) visibility.hide(view);
++                else if (mode == Actions.COMMENT_ONLY) for (WeakReference<View> ref : rail.hidden) visibility.hide(ref.get());
++            }
 +            if (!enabled || mode == Actions.NONE || !FoldReelsViews.unitParents(view, viewer)) { rail.restore(view); continue; }
-+            rail.capture(view); FoldReelsViews.bounds(view, work, matrix);
++            NativeOwner ownerState = nativeOwner == null ? null : nativeActionOwners.get(nativeOwner);
++            boolean anchored = ownerState != null && ownerState.anchor.applied;
++            if (view != nativeOwner || !anchored) rail.capture(view);
++            FoldReelsViews.bounds(view, work, matrix);
 +            work.offset(rail.x - view.getTranslationX(), rail.y - view.getTranslationY());
 +            if (work.centerX() < viewerBounds.centerX()) { rail.restore(view); continue; }
 +            rail.ax = rail.x + wantedRight - work.right;
-+            rail.ay = rail.y;
++            rail.ay = view == nativeOwner && anchored ? ownerState.anchor.ay : rail.y;
 +            View page = rail.page.get();
-+            if (page != null && FoldReelsViews.descendant(view, page)) {
++            if (page != null && FoldReelsViews.descendant(view, page)
++                    && !(mode == Actions.COMMENT_ONLY && anchored)) {
 +                float nativeOffset = FoldReelsViews.pageOffset(page, viewer, page.getHeight(), work, matrix);
 +                float visualOffset = FoldReelsGeometry.pageOffset(nativeOffset, page.getHeight(), viewport.height());
 +                if (Float.isFinite(visualOffset)) rail.ay += visualOffset - nativeOffset;
@@ -1795,7 +1916,7 @@ index 00000000..a13a89fc
 +        if ((!enabled || mode == Actions.NONE) && rails.containsKey(active.get())) cancel();
 +    }
 +
-+    boolean isRail(View view) { return rails.containsKey(view); }
++    boolean isRail(View view) { return rails.containsKey(view) || nativeActionOwners.containsKey(view); }
 +    void metadataTarget(View group, ArrayList<WeakReference<View>> targets, boolean moved) {
 +        if (moved) metadataTargets.put(group, targets);
 +        else { if (active.get() == group) cancel(); metadataTargets.remove(group); }
@@ -1813,22 +1934,10 @@ index 00000000..a13a89fc
 +            cancel();
 +            point[0] = event.getX(); point[1] = event.getY();
 +            matrix.reset(); viewer.transformMatrixToGlobal(matrix); matrix.mapPoints(point);
-+            for (Map.Entry<ViewGroup, Rail> e : rails.entrySet()) {
-+                ViewGroup rail = e.getKey(); Rail state = e.getValue();
-+                if (!state.applied || !rail.isShown() || rail.getAlpha() <= .01f) continue;
-+                if (Math.abs(state.ax - state.x) <= .5f && Math.abs(state.ay - state.y) <= .5f) continue;
-+                boolean hit = false;
-+                for (WeakReference<View> ref : mode == Actions.COMMENT_ONLY ? state.commentTargets : state.targets) {
-+                    View target = ref.get();
-+                    if (target == null || !target.isShown() || !target.isEnabled() || target.getAlpha() <= .01f) continue;
-+                    FoldReelsViews.bounds(target, work, matrix);
-+                    if (work.contains(point[0], point[1]) && insideClips(target, viewer, point[0], point[1])) { hit = true; break; }
-+                }
-+                if (!hit || obscured(rail, viewer, point[0], point[1])) continue;
-+                if (dispatch(rail, viewer, event)) {
-+                    active = new WeakReference<>(rail); activeViewer = new WeakReference<>(viewer); down = MotionEvent.obtain(event); last = MotionEvent.obtain(event); return true;
-+                }
-+            }
++            for (Map.Entry<ViewGroup, Rail> e : rails.entrySet())
++                if (startRailTouch(e.getKey(), e.getValue(), viewer, event)) return true;
++            for (Map.Entry<ViewGroup, NativeOwner> e : nativeActionOwners.entrySet())
++                if (startRailTouch(e.getKey(), e.getValue().anchor, viewer, event)) return true;
 +            for (Map.Entry<View, ArrayList<WeakReference<View>>> e : metadataTargets.entrySet()) {
 +                View group = e.getKey();
 +                if (!group.isShown() || !FoldReelsViews.descendant(group, viewer)) continue;
@@ -1880,6 +1989,20 @@ index 00000000..a13a89fc
 +        if (last != null) last.recycle(); last = MotionEvent.obtain(event);
 +        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) clearTouch();
 +        return true;
++    }
++    private boolean startRailTouch(ViewGroup rail, Rail state, View viewer, MotionEvent event) {
++        if (!state.applied || !rail.isShown() || rail.getAlpha() <= .01f
++                || Math.abs(state.ax - state.x) <= .5f && Math.abs(state.ay - state.y) <= .5f) return false;
++        boolean hit = false;
++        for (WeakReference<View> ref : mode == Actions.COMMENT_ONLY ? state.commentTargets : state.targets) {
++            View target = ref.get();
++            if (target == null || !target.isShown() || !target.isEnabled() || target.getAlpha() <= .01f) continue;
++            FoldReelsViews.bounds(target, work, matrix);
++            if (work.contains(point[0], point[1]) && insideClips(target, viewer, point[0], point[1])) { hit = true; break; }
++        }
++        if (!hit || obscured(rail, viewer, point[0], point[1]) || !dispatch(rail, viewer, event)) return false;
++        active = new WeakReference<>(rail); activeViewer = new WeakReference<>(viewer);
++        down = MotionEvent.obtain(event); last = MotionEvent.obtain(event); return true;
 +    }
 +    private boolean insideClips(View target, View viewer, float x, float y) {
 +        for (View v=target; v!=null; v=v.getParent() instanceof View ? (View)v.getParent() : null) {
@@ -1957,13 +2080,23 @@ index 00000000..a13a89fc
 +        if (down != null) down.recycle(); if (last != null) last.recycle();
 +        down = last = null; swiping = false; pagerX = pagerY = 0; active.clear(); activeViewer.clear();
 +    }
-+    void restore() { cancel(); visibility.restore(); candidates.clear(); masks.clear(); nativeActionOwners.clear(); metadataTargets.clear(); progressTargets.clear(); for (Map.Entry<ViewGroup, Rail> e : rails.entrySet()) e.getValue().restore(e.getKey()); rails.clear(); moved = 0; }
++    void restore() { cancel(); visibility.restore(); candidates.clear(); masks.clear(); for (Map.Entry<ViewGroup, NativeOwner> e : nativeActionOwners.entrySet()) releaseOwner(e.getKey(), e.getValue()); nativeActionOwners.clear(); presentationRenderer.clear(); metadataTargets.clear(); progressTargets.clear(); for (Map.Entry<ViewGroup, Rail> e : rails.entrySet()) e.getValue().restore(e.getKey()); rails.clear(); moved = 0; }
 +    private static final class Candidate { final ViewGroup view; final int mask; Candidate(ViewGroup v, int m) { view = v; mask = m; } }
++    private static final class NativeOwner {
++        final WeakReference<View> page, scope, parent;
++        final Rail anchor;
++        int seen;
++        NativeOwner(ViewGroup owner, View page, View scope) {
++            this.page = new WeakReference<>(page); this.scope = new WeakReference<>(scope);
++            parent = new WeakReference<>((View) owner.getParent()); anchor = new Rail(owner);
++        }
++    }
 +    private static final class Rail {
 +        final ArrayList<WeakReference<View>> targets = new ArrayList<>();
 +        final ArrayList<WeakReference<View>> hidden = new ArrayList<>();
 +        final ArrayList<WeakReference<View>> commentTargets = new ArrayList<>();
 +        WeakReference<View> page = new WeakReference<>(null);
++        WeakReference<ViewGroup> nativeOwner;
 +        int seen, mask; float x, y, ax, ay; boolean applied;
 +        Rail(View view) { x = view.getTranslationX(); y = view.getTranslationY(); }
 +        void capture(View view) {
@@ -4880,6 +5013,131 @@ index 00000000..c149cc0b
 +        }
 +    }
 +}
+diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsCommentAnchorTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsCommentAnchorTest.java
+new file mode 100644
+index 00000000..769123d1
+--- /dev/null
++++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsCommentAnchorTest.java
+@@ -0,0 +1,119 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.morphe.extension.instagram.patches.reels;
++
++import android.graphics.Color;
++import android.graphics.RectF;
++import android.view.MotionEvent;
++import android.view.View;
++import android.widget.FrameLayout;
++import com.facebook.litho.ComponentHost;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.concurrent.atomic.AtomicInteger;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.RobolectricTestRunner;
++import org.robolectric.annotation.Config;
++import static org.junit.Assert.*;
++
++@RunWith(RobolectricTestRunner.class)
++@Config(sdk=29, manifest=Config.NONE, qualifiers="w1000dp-h1600dp-mdpi")
++public class FoldReelsCommentAnchorTest extends FoldReelsTestFixture {
++    ComponentHost owner() {
++        ComponentHost owner = new ComponentHost(activity); owner.setTag("clips_ufi_component");
++        add(pages.get(1), owner, 800, 300, 80, 440); return owner;
++    }
++    View action(FrameLayout parent, String role, int top) {
++        View view = new View(activity); view.setTag(role); view.setClickable(true);
++        add(parent, view, 0, top, 80, 60); return view;
++    }
++    void position(FoldReelsControls.Actions actions, boolean enabled, RectF viewport, RectF interactive) {
++        clipping.beginFrame(); controls.frame(viewer, viewport, interactive, false, enabled, actions, clipping); clipping.endFrame();
++    }
++    void tap(View view) {
++        float[] point = localCentre(view); send(MotionEvent.ACTION_DOWN, point[0], point[1]); send(MotionEvent.ACTION_UP, point[0], point[1]);
++    }
++    @Test public void changingNativeColumnAndCommentCountCannotMoveTheCommentAnchor() {
++        ComponentHost owner = owner(); View comment = action(owner, "comment_button", 100);
++        AtomicInteger comments = new AtomicInteger(), counts = new AtomicInteger(); comment.setOnClickListener(v -> comments.incrementAndGet());
++        discoverControls(); assertEquals(0, controls.railCount()); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(700, bounds(comment).centerY(), .01f);
++        View count = action(owner, "comment_count", 160); count.setOnClickListener(v -> counts.incrementAndGet());
++        // Native comments-return layout expands the column and shifts its origin.
++        owner.layout(800, 121, 880, 740); comment.layout(0, 160, 80, 220); count.layout(0, 220, 80, 280);
++        View repost = action(owner, "repost_count", 380); action(owner, "direct_share_button", 320);
++        for (int i = 0; i < 3; i++) {
++            controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++            assertEquals(700, bounds(comment).centerY(), .01f); assertEquals(760, bounds(count).centerY(), .01f);
++        }
++        assertEquals(View.INVISIBLE, repost.getVisibility()); tap(comment); tap(count);
++        assertEquals(1, comments.get()); assertEquals(1, counts.get());
++        owner.removeView(count); owner.removeView(repost); owner.layout(800, 300, 880, 740); comment.layout(0, 100, 80, 160);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(700, bounds(comment).centerY(), .01f);
++        controlMode(FoldReelsControls.Actions.ALL); assertEquals(430, bounds(comment).centerY(), .01f);
++        assertEquals(0, owner.getTranslationY(), .001f);
++    }
++    @Test public void paginationResizeAndRebindUseTheCurrentInteractivePageCentre() {
++        ComponentHost owner = owner(); View comment = action(owner, "comment_button", 100);
++        discoverControls(); RectF viewport = fullViewport(), interactive = new RectF(0, 100, 1000, 1500);
++        position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
++        assertEquals(800, bounds(comment).centerY(), .01f);
++        for (float distance : new float[]{350, 700, 350, 0}) {
++            swipe(distance); position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
++            assertEquals(800 - distance / 1400 * 1600, bounds(comment).centerY(), .01f);
++        }
++        position(FoldReelsControls.Actions.COMMENT_ONLY, false, viewport, interactive);
++        assertEquals(430, bounds(comment).centerY(), .01f); assertEquals(0, owner.getTranslationY(), .001f);
++        position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
++        position(FoldReelsControls.Actions.ALL, true, viewport, interactive); assertEquals(430, bounds(comment).centerY(), .01f);
++        viewer.layout(0, 0, 1000, 1200);
++        for (int i = 0; i < pages.size(); i++) pages.get(i).layout(0, (i - 1) * 1200, 1000, i * 1200);
++        viewport = new RectF(0, 0, 1000, 1200); interactive = new RectF(0, 100, 1000, 1100);
++        position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive); assertEquals(600, bounds(comment).centerY(), .01f);
++        pages.get(1).removeView(owner); add(pages.get(2), owner, 800, 300, 80, 440);
++        position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
++        assertEquals(0, owner.getTranslationY(), .001f); assertEquals(1630, bounds(comment).centerY(), .01f);
++        discoverControls(); position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
++        assertEquals(1800, bounds(comment).centerY(), .01f);
++        owner.setTag("clips_metadata_component"); position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
++        assertEquals(1630, bounds(comment).centerY(), .01f); assertEquals(0, owner.getTranslationY(), .001f);
++    }
++    @Test public void ownerThatIsAlsoTheRailAnchorsOnceAndYieldsToSheetsAndCancellation() {
++        ComponentHost owner = owner(); action(owner, "like_button", 0);
++        View comment = action(owner, "comment_button", 100), count = action(owner, "comment_count", 160);
++        action(owner, "direct_share_button", 240); action(owner, "save_button", 340);
++        AtomicInteger clicks = new AtomicInteger(), sheets = new AtomicInteger(); comment.setOnClickListener(v -> clicks.incrementAndGet());
++        discoverControls(); assertEquals(1, controls.railCount()); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(700, bounds(comment).centerY(), .01f); assertEquals(760, bounds(count).centerY(), .01f);
++        for (int i = 0; i < 3; i++) { controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(700, bounds(comment).centerY(), .01f); }
++        owner.layout(800, 121, 880, 561); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(700, bounds(comment).centerY(), .01f); tap(comment); assertEquals(1, clicks.get());
++        FrameLayout sheet = new FrameLayout(activity); sheet.setBackgroundColor(Color.BLACK); sheet.setOnClickListener(v -> sheets.incrementAndGet());
++        add(viewer, sheet, 0, 0, 1000, 1400); tap(comment); assertEquals(1, clicks.get()); assertEquals(1, sheets.get());
++        viewer.removeView(sheet);
++        float[] point = localCentre(comment); send(MotionEvent.ACTION_DOWN, point[0], point[1]);
++        position(FoldReelsControls.Actions.COMMENT_ONLY, false, bounds(viewer), null);
++        send(MotionEvent.ACTION_UP, point[0], point[1]); assertEquals(1, clicks.get());
++        assertEquals(0, owner.getTranslationY(), .001f); assertEquals(0, owner.getTranslationX(), .001f);
++        controlMode(FoldReelsControls.Actions.COMMENT_ONLY); owner.setTag("clips_metadata_component"); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(0, controls.railCount()); assertEquals(0, owner.getTranslationY(), .001f); assertEquals(0, owner.getTranslationX(), .001f);
++    }
++    @Test public void identicalRediscoveryPreservesNativeCommentTouchAndVerticalTransfer() {
++        ComponentHost owner = owner(); View comment = action(owner, "comment_button", 100);
++        ArrayList<Integer> touches = new ArrayList<>(); AtomicInteger clicks = new AtomicInteger();
++        comment.setOnTouchListener((v, event) -> { touches.add(event.getActionMasked()); return false; });
++        comment.setOnClickListener(v -> clicks.incrementAndGet());
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        float[] point = localCentre(comment); send(MotionEvent.ACTION_DOWN, point[0], point[1]);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        send(MotionEvent.ACTION_UP, point[0], point[1]);
++        assertEquals(Arrays.asList(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP), touches); assertEquals(1, clicks.get());
++        touches.clear(); viewer.nativeActions.clear(); point = localCentre(comment);
++        send(MotionEvent.ACTION_DOWN, point[0], point[1]); discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        send(MotionEvent.ACTION_MOVE, point[0], point[1] - 250); send(MotionEvent.ACTION_UP, point[0], point[1] - 350);
++        assertEquals(1, clicks.get());
++        assertTrue(viewer.nativeActions.contains(MotionEvent.ACTION_DOWN));
++        assertTrue(viewer.nativeActions.contains(MotionEvent.ACTION_MOVE));
++        assertEquals(MotionEvent.ACTION_UP, (int) viewer.nativeActions.get(viewer.nativeActions.size() - 1));
++    }
++}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsDrawingTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsDrawingTest.java
 new file mode 100644
 index 00000000..027032c9
@@ -5436,10 +5694,10 @@ index 00000000..465db599
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedControlsTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedControlsTest.java
 new file mode 100644
-index 00000000..968b4b27
+index 00000000..b563ce72
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsMountedControlsTest.java
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,92 @@
 +package app.morphe.extension.instagram.patches.reels;
 +
 +import android.view.View;
@@ -5472,7 +5730,8 @@ index 00000000..968b4b27
 +        for (float distance : new float[]{0, 350, 700, 350, 0}) {
 +            swipe(distance); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
 +            assertEquals(View.INVISIBLE, like.getVisibility()); assertEquals(View.INVISIBLE, count.getVisibility());
-+            assertEquals(View.VISIBLE, unknown.getVisibility()); assertEquals(View.VISIBLE, owner.getVisibility());
++            // CLEAN now covers anonymous non-comment branches inside a verified native UFI.
++            assertEquals(View.INVISIBLE, unknown.getVisibility()); assertEquals(View.VISIBLE, owner.getVisibility());
 +        }
 +        controlMode(FoldReelsControls.Actions.ALL);
 +        assertEquals(View.VISIBLE, like.getVisibility()); assertEquals(View.VISIBLE, count.getVisibility());
@@ -5822,6 +6081,149 @@ index 00000000..d3ec2308
 +        discover();String report=FoldReelsDiagnostics.structure(renderer,viewer,content);
 +        assertTrue(report.indexOf("player-path")<report.indexOf("viewer-ancestor-path"));assertFalse(report.contains("android.view.ViewStub"));
 +        assertTrue(report.endsWith("END-STRUCTURE\n"));assertTrue(report.length()<30000);
++    }
++}
+diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsOwnedControlsTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsOwnedControlsTest.java
+new file mode 100644
+index 00000000..a2afb335
+--- /dev/null
++++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsOwnedControlsTest.java
+@@ -0,0 +1,137 @@
++/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
++package app.morphe.extension.instagram.patches.reels;
++
++import android.view.TextureView;
++import android.view.View;
++import android.widget.FrameLayout;
++import android.widget.ImageView;
++import android.widget.TextView;
++import com.facebook.litho.ComponentHost;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.RobolectricTestRunner;
++import org.robolectric.annotation.Config;
++import static org.junit.Assert.*;
++
++/** Separate semantic-owner regressions; the five-method 9e probe retains its identity. */
++@RunWith(RobolectricTestRunner.class)
++@Config(sdk=29, manifest=Config.NONE, qualifiers="w1000dp-h1600dp-mdpi")
++public class FoldReelsOwnedControlsTest extends FoldReelsTestFixture {
++    ComponentHost owner(FrameLayout parent) {
++        ComponentHost owner = new ComponentHost(activity); owner.setTag("clips_ufi_component");
++        add(parent, owner, 800, 300, 80, 440); return owner;
++    }
++    View action(FrameLayout parent, String role, int top) {
++        View view = new View(activity); view.setTag(role); view.setClickable(true);
++        add(parent, view, 0, top, 80, 60); return view;
++    }
++    ImageView image(FrameLayout parent, int top) {
++        ImageView view = new ImageView(activity); add(parent, view, 0, top, 80, 60); return view;
++    }
++    TextView text(FrameLayout parent, int top) {
++        TextView view = new TextView(activity); view.setText("191"); add(parent, view, 0, top, 80, 40); return view;
++    }
++    @Test public void partialOwnerHidesAnonymousImageTextAndNamedRepostWhilePreservingComment() {
++        ComponentHost owner = owner(pages.get(2));
++        ImageView repost = image(owner, 0); TextView anonymousCount = text(owner, 60);
++        View namedCount = action(owner, "repost_count", 100);
++        View comment = action(owner, "comment_button", 200), count = action(owner, "comment_count", 260);
++        ImageView outside = image(pages.get(2), 100);
++        discoverControls(); assertEquals(0, controls.railCount());
++        for (float distance : new float[]{0, 700, 1100, 700, 0}) {
++            swipe(distance); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++            assertEquals(View.INVISIBLE, repost.getVisibility());
++            assertEquals(View.INVISIBLE, anonymousCount.getVisibility()); assertEquals(View.INVISIBLE, namedCount.getVisibility());
++            assertTrue(comment.isShown()); assertTrue(count.isShown()); assertEquals(View.VISIBLE, outside.getVisibility());
++            assertEquals(View.VISIBLE, owner.getVisibility());
++        }
++        controlMode(FoldReelsControls.Actions.ALL);
++        for (View view : new View[]{repost, anonymousCount, namedCount}) assertEquals(View.VISIBLE, view.getVisibility());
++        assertEquals(0, owner.getTranslationY(), .001f);
++    }
++    @Test public void lateCommentAndCountReleaseHiddenAncestorWithoutRediscovery() {
++        ComponentHost owner = owner(pages.get(1));
++        FrameLayout column = new FrameLayout(activity); add(owner, column, 0, 0, 80, 440);
++        ImageView repost = image(column, 0); TextView anonymousCount = text(column, 60);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(View.INVISIBLE, column.getVisibility());
++        View comment = action(column, "comment_button", 200), count = action(column, "comment_count", 260);
++        controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertTrue(column.isShown()); assertTrue(comment.isShown()); assertTrue(count.isShown());
++        assertEquals(View.INVISIBLE, repost.getVisibility()); assertEquals(View.INVISIBLE, anonymousCount.getVisibility());
++        controlMode(FoldReelsControls.Actions.ALL); assertTrue(repost.isShown()); assertTrue(anonymousCount.isShown());
++    }
++    @Test public void foreignAndAmbiguousOwnersCannotHideUnknowns() {
++        FrameLayout namedOnly = new FrameLayout(activity); namedOnly.setTag("clips_ufi_component");
++        add(pages.get(1), namedOnly, 700, 300, 80, 440); ImageView namedUnknown = image(namedOnly, 0);
++        ComponentHost classOnly = new ComponentHost(activity); add(pages.get(1), classOnly, 600, 300, 80, 440);
++        ImageView classUnknown = image(classOnly, 0);
++        ComponentHost outside = owner(content); ImageView outsideUnknown = image(outside, 0);
++        FrameLayout nestedPage = new FrameLayout(activity); add(pages.get(2), nestedPage, 0, 0, 1000, 1400);
++        add(nestedPage, new TextureView(activity), 106, 0, 788, 1400);
++        ComponentHost ambiguous = owner(nestedPage); ImageView ambiguousUnknown = image(ambiguous, 0);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        for (View view : new View[]{namedUnknown, classUnknown, outsideUnknown, ambiguousUnknown})
++            assertEquals(View.VISIBLE, view.getVisibility());
++        for (View view : new View[]{classOnly, outside, ambiguous}) assertEquals(0, view.getTranslationY(), .001f);
++    }
++    @Test public void mediaAndIncompleteOwnersDoNotHideAnyBranch() {
++        ComponentHost mediaOwner = owner(pages.get(1)); ImageView unknown = image(mediaOwner, 0);
++        View like = action(mediaOwner, "like_button", 100); TextureView media = new TextureView(activity);
++        add(mediaOwner, media, 0, 200, 80, 60);
++        ComponentHost incomplete = owner(pages.get(2)); View earlyLike = action(incomplete, "like_button", 0);
++        FrameLayout deep = incomplete;
++        for (int i = 0; i < 42; i++) { FrameLayout child = new FrameLayout(activity); add(deep, child, 0, 0, 80, 440); deep = child; }
++        discoverControls(); controlMode(FoldReelsControls.Actions.NONE);
++        for (View view : new View[]{unknown, like, media, earlyLike}) assertEquals(View.VISIBLE, view.getVisibility());
++    }
++    @Test public void laterMountedMediaAndBudgetAbortWholeOwner() {
++        ComponentHost owner = owner(pages.get(1)); ImageView unknown = image(owner, 0);
++        View like = action(owner, "like_button", 100);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(View.INVISIBLE, unknown.getVisibility());
++        TextureView media = new TextureView(activity); add(owner, media, 0, 200, 80, 60);
++        controlMode(FoldReelsControls.Actions.NONE);
++        for (View view : new View[]{unknown, like, media}) assertEquals(View.VISIBLE, view.getVisibility());
++        owner.removeView(media); discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(View.INVISIBLE, unknown.getVisibility());
++        for (int i = 0; i < 1601; i++) add(owner, new View(activity), 0, 0, 1, 1);
++        controlMode(FoldReelsControls.Actions.NONE);
++        assertEquals(View.VISIBLE, unknown.getVisibility()); assertEquals(View.VISIBLE, like.getVisibility());
++        for (int i = 0; i < owner.getChildCount(); i++) assertEquals(View.VISIBLE, owner.getChildAt(i).getVisibility());
++    }
++    @Test public void reboundAndDetachedOwnersReleaseAllLeases() {
++        ComponentHost owner = owner(pages.get(1)); ImageView unknown = image(owner, 0);
++        TextView count = text(owner, 60); View gone = action(owner, "save_button", 200); gone.setVisibility(View.GONE);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(View.INVISIBLE, unknown.getVisibility()); assertEquals(View.INVISIBLE, count.getVisibility());
++        owner.removeView(unknown); assertEquals(View.VISIBLE, unknown.getVisibility());
++        add(pages.get(2), unknown, 600, 300, 80, 60);
++        pages.get(1).removeView(owner); add(pages.get(2), owner, 800, 300, 80, 440);
++        controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(View.VISIBLE, count.getVisibility());
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(View.INVISIBLE, count.getVisibility()); assertEquals(View.VISIBLE, unknown.getVisibility());
++        owner.setTag("clips_metadata_component"); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(View.VISIBLE, count.getVisibility());
++        owner.setTag("clips_ufi_component"); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(View.VISIBLE, count.getVisibility());
++        discoverControls(); controlMode(FoldReelsControls.Actions.NONE); assertEquals(View.INVISIBLE, count.getVisibility());
++        controlMode(FoldReelsControls.Actions.ALL); assertEquals(View.VISIBLE, count.getVisibility()); assertEquals(View.GONE, gone.getVisibility());
++    }
++    @Test public void ownedRailCannotHideNewCommentOrRenewAfterRebind() {
++        ComponentHost owner = owner(pages.get(1));
++        FrameLayout column = new FrameLayout(activity); add(owner, column, 0, 0, 80, 440);
++        action(column, "like_button", 0); action(column, "comment_button", 100); action(column, "direct_share_button", 200);
++        FrameLayout branch = new FrameLayout(activity); add(column, branch, 0, 300, 80, 120); image(branch, 0);
++        discoverControls(); assertEquals(1, controls.railCount()); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertFalse(branch.isShown());
++        View lateComment = action(branch, "comment_button", 0), lateCount = action(branch, "comment_count", 60);
++        controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertTrue(lateComment.isShown()); assertTrue(lateCount.isShown()); assertTrue(branch.isShown());
++        owner.setTag("clips_metadata_component"); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
++        assertEquals(0, controls.railCount());
++        for (int i = 0; i < column.getChildCount(); i++) assertEquals(View.VISIBLE, column.getChildAt(i).getVisibility());
++        assertEquals(0, column.getTranslationX(), .001f); assertEquals(0, column.getTranslationY(), .001f);
++        assertEquals(0, owner.getTranslationY(), .001f);
 +    }
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPagerTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsPagerTest.java
