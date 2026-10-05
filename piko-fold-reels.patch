@@ -5015,10 +5015,10 @@ index 00000000..c149cc0b
 +}
 diff --git a/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsCommentAnchorTest.java b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsCommentAnchorTest.java
 new file mode 100644
-index 00000000..769123d1
+index 00000000..66d96617
 --- /dev/null
 +++ b/extensions/instagram/src/test/java/app/morphe/extension/instagram/patches/reels/FoldReelsCommentAnchorTest.java
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,125 @@
 +/* Unofficial Piko derivative. GPL-3.0-or-later; retain the root NOTICE. */
 +package app.morphe.extension.instagram.patches.reels;
 +
@@ -5049,8 +5049,14 @@ index 00000000..769123d1
 +        add(parent, view, 0, top, 80, 60); return view;
 +    }
 +    void position(FoldReelsControls.Actions actions, boolean enabled, RectF viewport, RectF interactive) {
-+        clipping.beginFrame(); controls.frame(viewer, viewport, interactive, false, enabled, actions, clipping); clipping.endFrame();
++        RectF globalInteractive = null;
++        if (interactive != null) {
++            globalInteractive = new RectF(interactive); RectF origin = bounds(viewer);
++            globalInteractive.offset(origin.left, origin.top);
++        }
++        clipping.beginFrame(); controls.frame(viewer, viewport, globalInteractive, false, enabled, actions, clipping); clipping.endFrame();
 +    }
++    float centreY(View view) { return bounds(view).centerY() - bounds(viewer).top; }
 +    void tap(View view) {
 +        float[] point = localCentre(view); send(MotionEvent.ACTION_DOWN, point[0], point[1]); send(MotionEvent.ACTION_UP, point[0], point[1]);
 +    }
@@ -5058,46 +5064,46 @@ index 00000000..769123d1
 +        ComponentHost owner = owner(); View comment = action(owner, "comment_button", 100);
 +        AtomicInteger comments = new AtomicInteger(), counts = new AtomicInteger(); comment.setOnClickListener(v -> comments.incrementAndGet());
 +        discoverControls(); assertEquals(0, controls.railCount()); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
-+        assertEquals(700, bounds(comment).centerY(), .01f);
++        assertEquals(700, centreY(comment), .01f);
 +        View count = action(owner, "comment_count", 160); count.setOnClickListener(v -> counts.incrementAndGet());
 +        // Native comments-return layout expands the column and shifts its origin.
 +        owner.layout(800, 121, 880, 740); comment.layout(0, 160, 80, 220); count.layout(0, 220, 80, 280);
 +        View repost = action(owner, "repost_count", 380); action(owner, "direct_share_button", 320);
 +        for (int i = 0; i < 3; i++) {
 +            controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
-+            assertEquals(700, bounds(comment).centerY(), .01f); assertEquals(760, bounds(count).centerY(), .01f);
++            assertEquals(700, centreY(comment), .01f); assertEquals(760, centreY(count), .01f);
 +        }
 +        assertEquals(View.INVISIBLE, repost.getVisibility()); tap(comment); tap(count);
 +        assertEquals(1, comments.get()); assertEquals(1, counts.get());
 +        owner.removeView(count); owner.removeView(repost); owner.layout(800, 300, 880, 740); comment.layout(0, 100, 80, 160);
-+        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(700, bounds(comment).centerY(), .01f);
-+        controlMode(FoldReelsControls.Actions.ALL); assertEquals(430, bounds(comment).centerY(), .01f);
++        discoverControls(); controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(700, centreY(comment), .01f);
++        controlMode(FoldReelsControls.Actions.ALL); assertEquals(430, centreY(comment), .01f);
 +        assertEquals(0, owner.getTranslationY(), .001f);
 +    }
 +    @Test public void paginationResizeAndRebindUseTheCurrentInteractivePageCentre() {
 +        ComponentHost owner = owner(); View comment = action(owner, "comment_button", 100);
 +        discoverControls(); RectF viewport = fullViewport(), interactive = new RectF(0, 100, 1000, 1500);
 +        position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
-+        assertEquals(800, bounds(comment).centerY(), .01f);
++        assertEquals(800, centreY(comment), .01f);
 +        for (float distance : new float[]{350, 700, 350, 0}) {
 +            swipe(distance); position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
-+            assertEquals(800 - distance / 1400 * 1600, bounds(comment).centerY(), .01f);
++            assertEquals(800 - distance / 1400 * 1600, centreY(comment), .01f);
 +        }
 +        position(FoldReelsControls.Actions.COMMENT_ONLY, false, viewport, interactive);
-+        assertEquals(430, bounds(comment).centerY(), .01f); assertEquals(0, owner.getTranslationY(), .001f);
++        assertEquals(430, centreY(comment), .01f); assertEquals(0, owner.getTranslationY(), .001f);
 +        position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
-+        position(FoldReelsControls.Actions.ALL, true, viewport, interactive); assertEquals(430, bounds(comment).centerY(), .01f);
++        position(FoldReelsControls.Actions.ALL, true, viewport, interactive); assertEquals(430, centreY(comment), .01f);
 +        viewer.layout(0, 0, 1000, 1200);
 +        for (int i = 0; i < pages.size(); i++) pages.get(i).layout(0, (i - 1) * 1200, 1000, i * 1200);
-+        viewport = new RectF(0, 0, 1000, 1200); interactive = new RectF(0, 100, 1000, 1100);
-+        position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive); assertEquals(600, bounds(comment).centerY(), .01f);
++        viewport = bounds(viewer); interactive = new RectF(0, 100, 1000, 1100);
++        position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive); assertEquals(600, centreY(comment), .01f);
 +        pages.get(1).removeView(owner); add(pages.get(2), owner, 800, 300, 80, 440);
 +        position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
-+        assertEquals(0, owner.getTranslationY(), .001f); assertEquals(1630, bounds(comment).centerY(), .01f);
++        assertEquals(0, owner.getTranslationY(), .001f); assertEquals(1630, centreY(comment), .01f);
 +        discoverControls(); position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
-+        assertEquals(1800, bounds(comment).centerY(), .01f);
++        assertEquals(1800, centreY(comment), .01f);
 +        owner.setTag("clips_metadata_component"); position(FoldReelsControls.Actions.COMMENT_ONLY, true, viewport, interactive);
-+        assertEquals(1630, bounds(comment).centerY(), .01f); assertEquals(0, owner.getTranslationY(), .001f);
++        assertEquals(1630, centreY(comment), .01f); assertEquals(0, owner.getTranslationY(), .001f);
 +    }
 +    @Test public void ownerThatIsAlsoTheRailAnchorsOnceAndYieldsToSheetsAndCancellation() {
 +        ComponentHost owner = owner(); action(owner, "like_button", 0);
@@ -5105,10 +5111,10 @@ index 00000000..769123d1
 +        action(owner, "direct_share_button", 240); action(owner, "save_button", 340);
 +        AtomicInteger clicks = new AtomicInteger(), sheets = new AtomicInteger(); comment.setOnClickListener(v -> clicks.incrementAndGet());
 +        discoverControls(); assertEquals(1, controls.railCount()); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
-+        assertEquals(700, bounds(comment).centerY(), .01f); assertEquals(760, bounds(count).centerY(), .01f);
-+        for (int i = 0; i < 3; i++) { controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(700, bounds(comment).centerY(), .01f); }
++        assertEquals(700, centreY(comment), .01f); assertEquals(760, centreY(count), .01f);
++        for (int i = 0; i < 3; i++) { controlMode(FoldReelsControls.Actions.COMMENT_ONLY); assertEquals(700, centreY(comment), .01f); }
 +        owner.layout(800, 121, 880, 561); controlMode(FoldReelsControls.Actions.COMMENT_ONLY);
-+        assertEquals(700, bounds(comment).centerY(), .01f); tap(comment); assertEquals(1, clicks.get());
++        assertEquals(700, centreY(comment), .01f); tap(comment); assertEquals(1, clicks.get());
 +        FrameLayout sheet = new FrameLayout(activity); sheet.setBackgroundColor(Color.BLACK); sheet.setOnClickListener(v -> sheets.incrementAndGet());
 +        add(viewer, sheet, 0, 0, 1000, 1400); tap(comment); assertEquals(1, clicks.get()); assertEquals(1, sheets.get());
 +        viewer.removeView(sheet);
