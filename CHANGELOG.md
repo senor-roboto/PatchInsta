@@ -1,3 +1,13 @@
+# PatchInsta 4.1.11 — candidat
+
+- Actualise la base Piko vers 3.10.0-dev.9, toujours pour Instagram 439.
+- Ajoute le profil « Remplir la zone vidéo, garder la navigation » ; le nouveau défaut intérieur respecte tous les choix déjà enregistrés.
+- Étend le cadrage à l’aperçu vidéo natif en pause, élargit le dégradé social identifié et aligne jauge et métadonnées dans les profils remplis.
+- Éloigne la jauge des gestes système et corrige le départ des balayages verticaux depuis sa zone déplacée.
+- Retire le fond du raccourci plein écran et conserve sa zone tactile et son accessibilité.
+- Intègre les options Piko pour masquer « Suivre » et la ligne « Suivi par ».
+- [Validation du candidat et limites](VALIDATION-4.1.11.md). Aucune publication avant validation physique ; commentaires en rotation encore à investiguer.
+
 # PatchInsta 4.1.10
 
 - Étend le preset Plein écran propre à l’écran interne, avec mémoire indépendante par écran. Le correctif de cadre de la 4.1.9 externe, apprécié par l’utilisateur, est conservé ; vidéo centrée sans étirement et dégradé natif sur toute la largeur.
